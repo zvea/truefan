@@ -41,7 +41,7 @@ Runs every `poll_interval_seconds` (default 15):
 
 ### Sensor backends
 
-Each backend scans for available sensors and returns readings every poll cycle. Each reading has a unique id (`<backend>/<device-path>`, e.g. `smart/sda`, `lmsensors/coretemp-isa-0000/Core 0`), a sensor class, a temperature, and optional hardware-reported thresholds (`temp_max`, `temp_crit`). Hardware changes (e.g. a drive added or removed) are picked up in the next poll — no config change or restart needed.
+Each backend scans for available sensors and returns readings every poll cycle. Each reading has a unique id (`<backend>-<device-path>` with spaces replaced by underscores, e.g. `smart-sda`, `lmsensors-coretemp-isa-0000-Core_0`), a sensor class, a temperature, and optional hardware-reported thresholds (`temp_max`, `temp_crit`). Hardware changes (e.g. a drive added or removed) are picked up in the next poll — no config change or restart needed.
 
 - **IPMI** — CPU, ambient, chipset via `pyghmi`.
 - **SMART** — SATA/SAS drive temps via `pySMART` or `smartctl`.
@@ -105,7 +105,7 @@ fan_zones = ["peripheral"]
 
 # Per-sensor overrides — only the fields you want to change.
 # Useful for components that run hotter than others in their class.
-[curves.sensor."lmsensors/mlx5-pci-0200/sensor0"]
+[curves.sensor.lmsensors-mlx5-pci-0200-sensor0]
 temp_low = 60
 temp_high = 95
 

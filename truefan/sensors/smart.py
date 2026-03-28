@@ -5,7 +5,7 @@ import logging
 import subprocess
 from pathlib import Path
 
-from truefan.sensors import SensorBackend, SensorClass, SensorReading
+from truefan.sensors import SensorBackend, SensorClass, SensorReading, sensor_name
 
 _log: logging.Logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class SmartSensorBackend(SensorBackend):
             if temp is None:
                 continue
             readings.append(SensorReading(
-                name=f"smart/{dev.name}",
+                name=sensor_name("smart", dev.name),
                 sensor_class=SensorClass.DRIVE,
                 temperature=temp,
             ))

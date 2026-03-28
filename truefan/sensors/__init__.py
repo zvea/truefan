@@ -15,12 +15,22 @@ class SensorClass(StrEnum):
     OTHER = "other"
 
 
+def sensor_name(backend: str, *parts: str) -> str:
+    """Build a normalized sensor name from backend and device path parts.
+
+    Joins with hyphens, replaces spaces with underscores.
+    E.g. sensor_name("ipmi", "CPU Temp") → "ipmi-CPU_Temp".
+    """
+    raw = "-".join([backend, *parts])
+    return raw.replace(" ", "_")
+
+
 @dataclass(frozen=True, kw_only=True)
 class SensorReading:
     """A single temperature reading from a sensor.
 
-    The name is a unique id in the form <backend>/<device-path>,
-    e.g. "smart/sda" or "lmsensors/coretemp-isa-0000/Core 0".
+    The name is a normalized id built by sensor_name(), e.g.
+    "ipmi-CPU_Temp", "smart-sda", "lmsensors-coretemp-isa-0000-Core_0".
     If the hardware reports thermal limits, temp_max and temp_crit
     carry those values. A sensor's temp_max overrides the curve's
     temp_high when computing demanded duty.

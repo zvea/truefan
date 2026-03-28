@@ -3,7 +3,7 @@
 from typing import Final
 
 from truefan.bmc import BmcConnection
-from truefan.sensors import SensorBackend, SensorClass, SensorReading
+from truefan.sensors import SensorBackend, SensorClass, SensorReading, sensor_name
 
 _NAME_TO_CLASS: Final[dict[str, SensorClass]] = {
     "CPU Temp": SensorClass.CPU,
@@ -37,7 +37,7 @@ class IpmiSensorBackend(SensorBackend):
             if sensor_data.temperature is None:
                 continue
             readings.append(SensorReading(
-                name=f"ipmi/{sensor_data.name}",
+                name=sensor_name("ipmi", sensor_data.name),
                 sensor_class=_classify(sensor_data.name),
                 temperature=sensor_data.temperature,
                 temp_max=sensor_data.upper_non_critical,

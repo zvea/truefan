@@ -5,7 +5,7 @@ import logging
 import subprocess
 from typing import Final
 
-from truefan.sensors import SensorBackend, SensorClass, SensorReading
+from truefan.sensors import SensorBackend, SensorClass, SensorReading, sensor_name
 
 _log: logging.Logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class LmSensorBackend(SensorBackend):
                 if temp_input is None:
                     continue
                 readings.append(SensorReading(
-                    name=f"lmsensors/{chip_name}/{feature_name}",
+                    name=sensor_name("lmsensors", chip_name, feature_name),
                     sensor_class=sensor_class,
                     temperature=temp_input,
                     temp_max=temp_max,

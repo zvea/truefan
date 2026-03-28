@@ -5,7 +5,7 @@ import logging
 import subprocess
 from pathlib import Path
 
-from truefan.sensors import SensorBackend, SensorClass, SensorReading
+from truefan.sensors import SensorBackend, SensorClass, SensorReading, sensor_name
 
 _log: logging.Logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class NvmeSensorBackend(SensorBackend):
             if temp is None:
                 continue
             readings.append(SensorReading(
-                name=f"nvme/{dev.name}",
+                name=sensor_name("nvme", dev.name),
                 sensor_class=SensorClass.NVME,
                 temperature=temp,
             ))

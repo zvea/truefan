@@ -159,7 +159,7 @@ class TestLoadConfig:
             'duty_high = 100\n'
             'fan_zones = ["peripheral"]\n'
             '\n'
-            '[curves.sensor."lmsensors/mlx5-pci-0200/sensor0"]\n'
+            '[curves.sensor.lmsensors-mlx5-pci-0200-sensor0]\n'
             'temp_low = 60\n'
             'temp_high = 95\n'
             '\n'
@@ -171,8 +171,8 @@ class TestLoadConfig:
             '100 = 1500\n'
         )
         config = load_config(cfg)
-        assert "lmsensors/mlx5-pci-0200/sensor0" in config.sensor_overrides
-        override = config.sensor_overrides["lmsensors/mlx5-pci-0200/sensor0"]
+        assert "lmsensors-mlx5-pci-0200-sensor0" in config.sensor_overrides
+        override = config.sensor_overrides["lmsensors-mlx5-pci-0200-sensor0"]
         assert override.temp_low == 60
         assert override.temp_high == 95
         assert override.duty_low is None

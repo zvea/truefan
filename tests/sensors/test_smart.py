@@ -67,7 +67,7 @@ class TestSmartSensorBackend:
         readings = backend.scan()
         assert len(readings) == 3
         assert all(r.sensor_class == SensorClass.DRIVE for r in readings)
-        assert {r.name for r in readings} == {"smart/sda", "smart/sdb", "smart/sdc"}
+        assert {r.name for r in readings} == {"smart-sda", "smart-sdb", "smart-sdc"}
 
     @patch("truefan.sensors.smart._list_drives")
     @patch("truefan.sensors.smart.subprocess.run")

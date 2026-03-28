@@ -59,7 +59,7 @@ class TestRunSensors:
         from truefan.commands.sensors import run_sensors
         run_sensors()
         out = capsys.readouterr().out
-        assert "ipmi/CPU Temp" in out
+        assert "ipmi-CPU_Temp" in out
         assert "31.0" in out
         assert "80.0" in out
         assert "100.0" in out
@@ -107,7 +107,7 @@ class TestRunSensors:
         run_sensors()
         out = capsys.readouterr().out
         # System Temp has no thresholds in our mock
-        lines = [l for l in out.splitlines() if "System Temp" in l]
+        lines = [l for l in out.splitlines() if "System_Temp" in l]
         assert len(lines) == 1
         # Should have dashes for MAX and CRIT
         assert lines[0].count("-") >= 2

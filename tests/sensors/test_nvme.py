@@ -60,7 +60,7 @@ class TestNvmeSensorBackend:
         backend = NvmeSensorBackend()
         readings = backend.scan()
         assert len(readings) == 1
-        assert readings[0].name == "nvme/nvme0"
+        assert readings[0].name == "nvme-nvme0"
         assert readings[0].sensor_class == SensorClass.NVME
         assert readings[0].temperature == 37.9
 

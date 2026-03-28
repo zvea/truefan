@@ -99,7 +99,7 @@ class TestDaemonRun:
         sim = _make_sim()
 
         readings = [SensorReading(
-            name="ipmi/CPU Temp", sensor_class=SensorClass.CPU, temperature=55.0,
+            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=55.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
@@ -121,7 +121,7 @@ class TestDaemonRun:
         sim = _make_sim()
 
         readings = [SensorReading(
-            name="ipmi/CPU Temp", sensor_class=SensorClass.CPU, temperature=55.0,
+            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=55.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
@@ -155,7 +155,7 @@ class TestDaemonRun:
         sim = _make_sim(stall_below=999)  # all fans stall
 
         readings = [SensorReading(
-            name="ipmi/CPU Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
@@ -177,7 +177,7 @@ class TestDaemonRun:
         sim = _make_sim()
 
         readings = [SensorReading(
-            name="ipmi/CPU Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
@@ -195,7 +195,7 @@ class TestDaemonRun:
         sim = _make_sim()
 
         readings = [SensorReading(
-            name="ipmi/CPU Temp", sensor_class=SensorClass.CPU, temperature=55.0,
+            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=55.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
@@ -228,7 +228,7 @@ class TestDaemonRun:
         sim = _make_sim()
 
         readings = [SensorReading(
-            name="ipmi/CPU Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
@@ -261,7 +261,7 @@ class TestDaemonRun:
         sim = _make_sim()
 
         readings = [SensorReading(
-            name="ipmi/CPU Temp", sensor_class=SensorClass.CPU, temperature=55.0,
+            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=55.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
@@ -309,7 +309,7 @@ class TestDaemonRun:
         sim = _make_sim()
 
         readings = [SensorReading(
-            name="ipmi/CPU Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
