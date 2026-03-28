@@ -26,9 +26,17 @@ cycles via IPMI raw commands to keep things cool with minimal noise.
 
 ## Install
 
-```
+TrueNAS SCALE doesn't ship `ensurepip`, so create the venv without it and
+bootstrap pip manually:
+
+```bash
+python3 -m venv --without-pip /mnt/pool1/venvs/truefan
+source /mnt/pool1/venvs/truefan/bin/activate
+curl -sS https://bootstrap.pypa.io/get-pip.py | python3
 pip install truefan
 ```
+
+Put the venv on a pool — the boot drive is wiped on OS updates.
 
 ## Quick start
 
