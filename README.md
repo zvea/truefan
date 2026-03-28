@@ -1,4 +1,4 @@
-# TrueFan
+# truefan
 
 Fan control daemon for TrueNAS SCALE systems on Supermicro X11 boards. Reads
 temperatures from IPMI, SMART, NVMe, and lm-sensors, then adjusts fan duty
@@ -90,6 +90,20 @@ zone = "cpu"
 ```
 
 Use `--config PATH` with any command to specify an alternate config location.
+
+## Running on boot
+
+TrueNAS SCALE's **Init/Shutdown Scripts** (under **System > Advanced**) run
+commands at boot and shutdown. Use `tmux` to run the daemon in a detachable
+session you can attach to later for debugging.
+
+Add a script (Type: Command, When: Post Init):
+
+```
+tmux new-session -d -s truefan '/mnt/pool1/venvs/truefan/bin/truefan run 2>&1 | tee /var/log/truefan.log'
+```
+
+To check on the daemon: `tmux attach -t truefan`. Detach with `Ctrl-b d`.
 
 ## How it works
 
