@@ -144,7 +144,9 @@ class TestComputeZoneDuties:
 
         result = compute_zone_duties(readings, curves, fans)
         # 40°C on 30-50 range, duty_low=20, duty_high=100 → duty=60, snap to 60
-        assert result == {"peripheral": 60}
+        assert result["peripheral"].duty == 60
+        assert result["peripheral"].sensor_name == "sensor0"
+        assert result["peripheral"].temperature == 40.0
 
     def test_max_temp_within_class(self) -> None:
         """Multiple sensors of same class — hottest one drives the zone."""
@@ -158,8 +160,9 @@ class TestComputeZoneDuties:
         ]
 
         result = compute_zone_duties(readings, curves, fans)
-        # 45°C → duty=80, snaps to 80
-        assert result == {"peripheral": 80}
+        # 45°C → duty=80, snaps to 80. sdb is the hottest.
+        assert result["peripheral"].duty == 80
+        assert result["peripheral"].sensor_name == "sdb"
 
     def test_multiple_classes_same_zone(self) -> None:
         """Different sensor classes feeding the same zone — highest demand wins."""
@@ -181,7 +184,7 @@ class TestComputeZoneDuties:
 
         result = compute_zone_duties(readings, curves, fans)
         # Ambient demands more — should snap to 100 (nearest setpoint >= ~89)
-        assert result == {"peripheral": 100}
+        assert result["peripheral"].duty == 100
 
     def test_sensor_class_without_curve_ignored(self) -> None:
         """Sensors with no matching curve are ignored."""
@@ -195,7 +198,7 @@ class TestComputeZoneDuties:
         ]
 
         result = compute_zone_duties(readings, curves, fans)
-        assert result == {"peripheral": 60}
+        assert result["peripheral"].duty == 60
 
     def test_zone_with_no_sensors(self) -> None:
         """A fan zone with no sensors mapped to it is absent from the result."""
@@ -236,7 +239,7 @@ class TestComputeZoneDuties:
         result = compute_zone_duties(readings, curves, fans)
         # Demanded duty = 40 (midpoint on 30-50, 20-100 range)
         # FAN1 snaps to 40, FAN2 snaps to 40 — zone gets 40
-        assert result == {"peripheral": 40}
+        assert result["peripheral"].duty == 40
 
     def test_sensor_temp_max_overrides_curve(self) -> None:
         """A sensor's hardware temp_max overrides the curve's temp_high."""
@@ -265,4 +268,4 @@ class TestComputeZoneDuties:
         )]
         result_with = compute_zone_duties(readings_with_max, curves, fans)
         # With hardware temp_max, demand is lower → lower setpoint
-        assert result_with["peripheral"] < result_without["peripheral"]
+        assert result_with["peripheral"].duty < result_without["peripheral"].duty

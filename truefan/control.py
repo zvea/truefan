@@ -3,10 +3,21 @@
 Pure functions with no I/O or side effects.
 """
 
+from dataclasses import dataclass
 from types import MappingProxyType
 
 from truefan.config import Curve, FanConfig
 from truefan.sensors import SensorClass, SensorReading
+
+
+@dataclass(frozen=True, kw_only=True)
+class ZoneDuty:
+    """Resolved duty for a fan zone, with the reason it was chosen."""
+
+    duty: int
+    sensor_name: str
+    temperature: float
+    raw_duty: float
 
 
 def interpolate_duty(
@@ -49,7 +60,7 @@ def compute_zone_duties(
     readings: list[SensorReading],
     curves: MappingProxyType[SensorClass, Curve],
     fans: MappingProxyType[str, FanConfig],
-) -> dict[str, int]:
+) -> dict[str, ZoneDuty]:
     """Resolve sensor readings into a duty percentage per fan zone.
 
     For each sensor, computes demanded duty via its class's curve.
@@ -57,28 +68,31 @@ def compute_zone_duties(
     Groups demands by fan zone, takes the max per zone, then snaps
     to the lowest setpoint that satisfies all fans in the zone.
     """
-    # Compute max demanded duty per zone from sensor readings.
-    zone_demands: dict[str, float] = {}
+    # Track max demanded duty and which sensor caused it, per zone.
+    zone_demands: dict[str, tuple[float, SensorReading]] = {}
     for reading in readings:
         curve = curves.get(reading.sensor_class)
         if curve is None:
             continue
         duty = interpolate_duty(curve, reading.temperature, reading.temp_max)
         for zone in curve.fan_zones:
-            if zone in zone_demands:
-                zone_demands[zone] = max(zone_demands[zone], duty)
-            else:
-                zone_demands[zone] = duty
+            if zone not in zone_demands or duty > zone_demands[zone][0]:
+                zone_demands[zone] = (duty, reading)
 
     # For each zone with demand, snap to setpoints considering all fans.
-    result: dict[str, int] = {}
-    for zone, demand in zone_demands.items():
+    result: dict[str, ZoneDuty] = {}
+    for zone, (demand, reading) in zone_demands.items():
         zone_fans = [fc for fc in fans.values() if fc.zone == zone]
         if not zone_fans:
             continue
         max_snapped = max(
             snap_duty_to_setpoint(demand, fan.setpoints) for fan in zone_fans
         )
-        result[zone] = max_snapped
+        result[zone] = ZoneDuty(
+            duty=max_snapped,
+            sensor_name=reading.name,
+            temperature=reading.temperature,
+            raw_duty=demand,
+        )
 
     return result

@@ -11,7 +11,7 @@ from typing import Callable
 from truefan.bmc import BmcConnection, IpmitoolConnection
 from truefan.calibrate import remove_lowest_setpoint
 from truefan.config import Config, FanConfig, load_config, save_config
-from truefan.control import compute_zone_duties
+from truefan.control import ZoneDuty, compute_zone_duties
 from truefan.fans import (
     FanRpm,
     enable_manual_control,
@@ -49,9 +49,8 @@ def _read_all_sensors(backends: list[SensorBackend]) -> list[SensorReading]:
 def _check_class_failures(
     readings: list[SensorReading],
     config: Config,
-    zone_duties: dict[str, int],
-    conn: BmcConnection,
-) -> dict[str, int]:
+    zone_duties: dict[str, ZoneDuty],
+) -> dict[str, ZoneDuty]:
     """Set zones to 100% if all sensors in a configured class are missing.
 
     Returns the updated zone_duties dict.
@@ -64,7 +63,12 @@ def _check_class_failures(
                 sensor_class, ", ".join(curve.fan_zones),
             )
             for zone in curve.fan_zones:
-                zone_duties[zone] = 100
+                zone_duties[zone] = ZoneDuty(
+                    duty=100,
+                    sensor_name=f"[all {sensor_class} sensors failed]",
+                    temperature=0.0,
+                    raw_duty=100.0,
+                )
     return zone_duties
 
 
@@ -156,15 +160,18 @@ def run(
 
                 # Compute target duties.
                 zone_duties = compute_zone_duties(readings, config.curves, config.fans)
-                zone_duties = _check_class_failures(readings, config, zone_duties, conn)
+                zone_duties = _check_class_failures(readings, config, zone_duties)
 
                 # Apply duties (only if changed).
-                for zone, duty in zone_duties.items():
-                    if prev_zone_duties.get(zone) != duty:
-                        _log.info("Setting zone %s to %d%%", zone, duty)
-                        set_zone_duty(conn, zone, duty)
-                        prev_zone_duties[zone] = duty
-                    send_zone_duty(zone, duty)
+                for zone, zd in zone_duties.items():
+                    if prev_zone_duties.get(zone) != zd.duty:
+                        _log.info(
+                            "Setting zone %s to %d%% (%s at %.1f°C → %.0f%% demand)",
+                            zone, zd.duty, zd.sensor_name, zd.temperature, zd.raw_duty,
+                        )
+                        set_zone_duty(conn, zone, zd.duty)
+                        prev_zone_duties[zone] = zd.duty
+                    send_zone_duty(zone, zd.duty)
 
                 # Read fan RPMs and push metrics.
                 rpms = read_fan_rpms(conn)
