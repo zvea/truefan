@@ -59,7 +59,7 @@ class TestRunSensors:
         from truefan.commands.sensors import run_sensors
         run_sensors()
         out = capsys.readouterr().out
-        assert "ipmi-CPU_Temp" in out
+        assert "ipmi_CPU_Temp" in out
         assert "31.0" in out
         assert "80.0" in out
         assert "100.0" in out

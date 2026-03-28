@@ -73,4 +73,4 @@ All temperatures are in °C. Convert at the boundary.
 
 ## Naming
 
-Sensor names use hyphens as path separators and underscores for spaces: `ipmi-CPU_Temp`, `lmsensors-coretemp-isa-0000-Core_0`. Built by `sensor_name()` in `sensors/__init__.py`. This format works in TOML bare keys, statsd metric names, and log output.
+Sensor names use underscores throughout: `ipmi_CPU_Temp`, `lmsensors_coretemp_isa_0000_Core_0`. Built by `sensor_name()` in `sensors/__init__.py`. This format works in TOML bare keys, statsd metric names, and log output.

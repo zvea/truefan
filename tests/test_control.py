@@ -339,14 +339,14 @@ class TestComputeZoneDuties:
         # With curve temp_high=80: duty = 20 + (58-30)/(80-30) * 80 = 64.8 → snap 80
         # With temp_max=105:       duty = 20 + (58-30)/(105-30) * 80 = 49.9 → snap 60
         readings = [_reading(
-            name="lmsensors-mlx5-pci-0200-sensor0",
+            name="lmsensors_mlx5_pci_0200_sensor0",
             temperature=58.0,
             sensor_class=SensorClass.OTHER,
         )]
         result_without = compute_zone_duties(readings, curves, fans)
 
         readings_with_max = [SensorReading(
-            name="lmsensors-mlx5-pci-0200-sensor0",
+            name="lmsensors_mlx5_pci_0200_sensor0",
             sensor_class=SensorClass.OTHER,
             temperature=58.0,
             temp_max=105.0,
@@ -366,14 +366,14 @@ class TestComputeZoneDuties:
         fans = MappingProxyType({"FAN1": _fan_config(zone="peripheral")})
         # Two "other" sensors at the same temp.
         readings = [
-            _reading(name="lmsensors-mlx5-pci-0200-sensor0", temperature=67.0,
+            _reading(name="lmsensors_mlx5_pci_0200_sensor0", temperature=67.0,
                      sensor_class=SensorClass.OTHER),
-            _reading(name="ipmi-PCH_Temp", temperature=67.0,
+            _reading(name="ipmi_PCH_Temp", temperature=67.0,
                      sensor_class=SensorClass.OTHER),
         ]
         # Override only the NIC — raise temp_low so 67°C is barely above idle.
         overrides = MappingProxyType({
-            "lmsensors-mlx5-pci-0200-sensor0": SensorOverride(temp_low=60, temp_high=95),
+            "lmsensors_mlx5_pci_0200_sensor0": SensorOverride(temp_low=60, temp_high=95),
         })
         result_without = compute_zone_duties(readings, curves, fans)
         result_with = compute_zone_duties(readings, curves, fans, overrides)
@@ -394,11 +394,11 @@ class TestComputeZoneDuties:
         fans = MappingProxyType({"FAN1": _fan_config(zone="peripheral")})
         # Only the NIC — no other sensor to drive demand.
         readings = [
-            _reading(name="lmsensors-mlx5-pci-0200-sensor0", temperature=67.0,
+            _reading(name="lmsensors_mlx5_pci_0200_sensor0", temperature=67.0,
                      sensor_class=SensorClass.OTHER),
         ]
         overrides = MappingProxyType({
-            "lmsensors-mlx5-pci-0200-sensor0": SensorOverride(temp_low=60, temp_high=95),
+            "lmsensors_mlx5_pci_0200_sensor0": SensorOverride(temp_low=60, temp_high=95),
         })
         result_without = compute_zone_duties(readings, curves, fans)
         result_with = compute_zone_duties(readings, curves, fans, overrides)

@@ -124,13 +124,14 @@ class TestLmSensorBackend:
 
     @patch("truefan.sensors.lmsensors.subprocess.run", side_effect=_mock_sensors_run)
     def test_name_format(self, mock_run) -> None:  # noqa: ANN001
-        """Names follow lmsensors-<chip>-<feature> format."""
+        """Names follow lmsensors_<chip>_<feature> format."""
         backend = LmSensorBackend()
         readings = backend.scan()
         for r in readings:
-            assert r.name.startswith("lmsensors-")
+            assert r.name.startswith("lmsensors_")
             assert " " not in r.name
             assert "/" not in r.name
+            assert "-" not in r.name
 
     @patch("truefan.sensors.lmsensors.subprocess.run")
     def test_empty_on_bad_json(self, mock_run) -> None:  # noqa: ANN001

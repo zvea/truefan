@@ -69,8 +69,8 @@ class TestSendThermalLoad:
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
 
-            send_thermal_load("ipmi-CPU_Temp", 45.0, port=port)
-            assert _receive_one(sock) == "truefan.sensor.ipmi-CPU_Temp.thermal_load:45|g"
+            send_thermal_load("ipmi_CPU_Temp", 45.0, port=port)
+            assert _receive_one(sock) == "truefan.sensor.ipmi_CPU_Temp.thermal_load:45|g"
 
 
 # ---------------------------------------------------------------------------
@@ -86,12 +86,12 @@ class TestSendTemperature:
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
 
-            send_temperature("ipmi-CPU_Temp", 42.5, port=port)
-            assert _receive_one(sock) == "truefan.sensor.ipmi-CPU_Temp.temperature:42|g"
+            send_temperature("ipmi_CPU_Temp", 42.5, port=port)
+            assert _receive_one(sock) == "truefan.sensor.ipmi_CPU_Temp.temperature:42|g"
 
     def test_no_listener_does_not_raise(self) -> None:
         """send_temperature does not raise when nothing listens."""
-        send_temperature("ipmi-CPU_Temp", 42.5, port=1)
+        send_temperature("ipmi_CPU_Temp", 42.5, port=1)
 
 
 class TestSendDaemonRestart:
@@ -128,7 +128,7 @@ class TestNoNetdata:
 
     def test_thermal_load_no_listener(self) -> None:
         """send_thermal_load does not raise when nothing listens."""
-        send_thermal_load("ipmi-CPU_Temp", 45.0, port=1)
+        send_thermal_load("ipmi_CPU_Temp", 45.0, port=1)
 
     def test_unreachable_host(self) -> None:
         """Metrics to an unreachable host do not raise."""

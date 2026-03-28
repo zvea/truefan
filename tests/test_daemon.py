@@ -100,7 +100,7 @@ class TestDaemonRun:
         sim = _make_sim()
 
         readings = [SensorReading(
-            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=55.0,
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=55.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
@@ -122,7 +122,7 @@ class TestDaemonRun:
         sim = _make_sim()
 
         readings = [SensorReading(
-            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=55.0,
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=55.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
@@ -156,7 +156,7 @@ class TestDaemonRun:
         sim = _make_sim(stall_below=999)  # all fans stall
 
         readings = [SensorReading(
-            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
@@ -178,7 +178,7 @@ class TestDaemonRun:
         sim = _make_sim()
 
         readings = [SensorReading(
-            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
@@ -196,7 +196,7 @@ class TestDaemonRun:
         sim = _make_sim()
 
         readings = [SensorReading(
-            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=55.0,
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=55.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
@@ -229,7 +229,7 @@ class TestDaemonRun:
         sim = _make_sim()
 
         readings = [SensorReading(
-            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
@@ -262,7 +262,7 @@ class TestDaemonRun:
         sim = _make_sim()
 
         readings = [SensorReading(
-            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=55.0,
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=55.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
@@ -310,7 +310,7 @@ class TestDaemonRun:
         sim = _make_sim()
 
         readings = [SensorReading(
-            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
@@ -328,7 +328,7 @@ class TestDaemonRun:
         # but has zero readings, so cpu+peripheral zones should go to 100%.
         from truefan.sensors import SensorReading
         readings = [SensorReading(
-            name="smart/sda", sensor_class=SensorClass.DRIVE, temperature=35.0,
+            name="smart_sda", sensor_class=SensorClass.DRIVE, temperature=35.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
@@ -372,7 +372,7 @@ class TestDaemonRun:
 
         def _varying_backends(bmc):  # noqa: ANN001
             return [_StubSensorBackend([SensorReading(
-                name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU,
+                name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU,
                 temperature=temps[min(cycle, len(temps) - 1)],
             )])]
 
@@ -412,13 +412,13 @@ class TestDaemonRun:
         _write_config(cfg)
         # Append a sensor override for a nonexistent sensor.
         with open(cfg, "a") as f:
-            f.write("\n[curves.sensor.nonexistent-sensor]\ntemp_low = 60\n")
+            f.write("\n[curves.sensor.nonexistent_sensor]\ntemp_low = 60\n")
 
         sim = _make_sim()
         readings = [SensorReading(
-            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
-        with pytest.raises(ConfigError, match="nonexistent-sensor"):
+        with pytest.raises(ConfigError, match="nonexistent_sensor"):
             run(cfg, conn=sim, sleep=_StopAfter(1))

@@ -48,7 +48,7 @@ class TestIpmiSensorBackend:
         """CPU Temp is classified as cpu."""
         backend = IpmiSensorBackend(MockBmcConnection())
         readings = backend.scan()
-        cpu = [r for r in readings if r.name == "ipmi-CPU_Temp"]
+        cpu = [r for r in readings if r.name == "ipmi_CPU_Temp"]
         assert len(cpu) == 1
         assert cpu[0].sensor_class == SensorClass.CPU
         assert cpu[0].temperature == 31.0
@@ -59,8 +59,8 @@ class TestIpmiSensorBackend:
         readings = backend.scan()
         ambient = [r for r in readings if r.sensor_class == SensorClass.AMBIENT]
         names = {r.name for r in ambient}
-        assert "ipmi-System_Temp" in names
-        assert "ipmi-Peripheral_Temp" in names
+        assert "ipmi_System_Temp" in names
+        assert "ipmi_Peripheral_Temp" in names
 
     def test_classifies_dimm_as_other(self) -> None:
         """DIMM temps are classified as other."""
@@ -73,7 +73,7 @@ class TestIpmiSensorBackend:
         """PCH Temp is classified as other."""
         backend = IpmiSensorBackend(MockBmcConnection())
         readings = backend.scan()
-        pch = [r for r in readings if r.name == "ipmi-PCH_Temp"]
+        pch = [r for r in readings if r.name == "ipmi_PCH_Temp"]
         assert len(pch) == 1
         assert pch[0].sensor_class == SensorClass.OTHER
 
@@ -82,14 +82,14 @@ class TestIpmiSensorBackend:
         backend = IpmiSensorBackend(MockBmcConnection())
         readings = backend.scan()
         names = {r.name for r in readings}
-        assert "ipmi-M2NVMeSSD_Temp1" not in names
-        assert "ipmi-U2NVMeSSD_Temp" not in names
+        assert "ipmi_M2NVMeSSD_Temp1" not in names
+        assert "ipmi_U2NVMeSSD_Temp" not in names
 
     def test_sensor_names_prefixed(self) -> None:
-        """All sensor names are prefixed with ipmi-."""
+        """All sensor names are prefixed with ipmi_."""
         backend = IpmiSensorBackend(MockBmcConnection())
         readings = backend.scan()
-        assert all(r.name.startswith("ipmi-") for r in readings)
+        assert all(r.name.startswith("ipmi_") for r in readings)
 
     def test_nvme_classification(self) -> None:
         """M2NVMeSSD and U2NVMeSSD sensors are classified as nvme (when present)."""
@@ -101,7 +101,7 @@ class TestIpmiSensorBackend:
         """IPMI thresholds are passed through as temp_max and temp_crit."""
         backend = IpmiSensorBackend(MockBmcConnection())
         readings = backend.scan()
-        cpu = [r for r in readings if r.name == "ipmi-CPU_Temp"][0]
+        cpu = [r for r in readings if r.name == "ipmi_CPU_Temp"][0]
         assert cpu.temp_max == 80.0
         assert cpu.temp_crit == 100.0
 
@@ -109,6 +109,6 @@ class TestIpmiSensorBackend:
         """PCH sensor carries its own thresholds."""
         backend = IpmiSensorBackend(MockBmcConnection())
         readings = backend.scan()
-        pch = [r for r in readings if r.name == "ipmi-PCH_Temp"][0]
+        pch = [r for r in readings if r.name == "ipmi_PCH_Temp"][0]
         assert pch.temp_max == 84.0
         assert pch.temp_crit == 105.0

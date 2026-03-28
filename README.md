@@ -73,7 +73,7 @@ duty_high = 100
 fan_zones = ["peripheral"]
 
 # Per-sensor overrides for components that run hotter than their class
-[curves.sensor.lmsensors-mlx5-pci-0200-sensor0]
+[curves.sensor.lmsensors_mlx5_pci_0200_sensor0]
 temp_low = 60
 temp_high = 95
 
