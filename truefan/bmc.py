@@ -62,8 +62,16 @@ class IpmitoolConnection(BmcConnection):
     def _run(self, args: list[str]) -> str:
         """Run an ipmitool command and return stdout."""
         cmd = [_IPMITOOL] + args
-        _log.debug("Running: %s", " ".join(cmd))
-        result = subprocess.run(cmd, capture_output=True, check=True)
+        cmd_str = " ".join(cmd)
+        _log.debug("Running: %s", cmd_str)
+        try:
+            result = subprocess.run(cmd, capture_output=True, check=True)
+        except subprocess.CalledProcessError as e:
+            stderr = e.stderr.decode().strip() if e.stderr else ""
+            msg = f"{cmd_str} failed (exit {e.returncode})"
+            if stderr:
+                msg += f": {stderr}"
+            raise BmcError(msg) from e
         return result.stdout.decode()
 
     def raw_command(self, netfn: int, command: int, data: bytes = b"") -> bytes:

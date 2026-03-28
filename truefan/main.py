@@ -1,6 +1,7 @@
 """CLI entry point and argument parsing."""
 
 import argparse
+import sys
 from pathlib import Path
 
 from truefan.config import DEFAULT_CONFIG_FILENAME
@@ -36,6 +37,17 @@ def main(argv: list[str] | None = None) -> None:
         parser.print_help()
         return
 
+    try:
+        _dispatch(args)
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _dispatch(args: argparse.Namespace) -> None:
+    """Dispatch to the appropriate subcommand."""
     # Local imports: each subcommand imports only what it needs, so e.g.
     # `truefan sensors` doesn't pull in the daemon or calibration code.
     from truefan.pidfile import PID_PATH
