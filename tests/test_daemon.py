@@ -9,6 +9,7 @@ import pytest
 
 from tests.mocks import FanSimulator
 from truefan.config import Config, ConfigError, Curve, FanConfig, SensorOverride, load_config, save_config
+from truefan.fans import set_zone_duty
 from truefan.daemon import run
 from truefan.sensors import SensorClass
 
@@ -348,6 +349,60 @@ class TestDaemonRun:
             zone_duties.setdefault(zone_id, []).append(duty)
         # CPU zone (0x00) should have been set to 100.
         assert 100 in zone_duties.get(0x00, [])
+
+    @patch("truefan.daemon.available_backends")
+    def test_spindown_window_prevents_immediate_decrease(self, mock_avail, tmp_path: Path) -> None:
+        """Fan duty doesn't drop immediately when demand decreases."""
+        from truefan.sensors import SensorReading
+        cfg = tmp_path / "truefan.toml"
+        _write_config(cfg)
+        # Set a short window so the test doesn't need real time.
+        config = load_config(cfg)
+        updated = Config(
+            poll_interval_seconds=config.poll_interval_seconds,
+            curves=config.curves,
+            fans=config.fans,
+            spindown_window_seconds=999,  # long window — duty won't drop
+        )
+        save_config(cfg, updated)
+        sim = _make_sim()
+
+        cycle = 0
+        temps = [70.0, 40.0, 40.0]  # high, then low
+
+        def _varying_backends(bmc):  # noqa: ANN001
+            return [_StubSensorBackend([SensorReading(
+                name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU,
+                temperature=temps[min(cycle, len(temps) - 1)],
+            )])]
+
+        mock_avail.side_effect = _varying_backends
+
+        duty_sets: list[tuple[int, int]] = []
+        original_set = set_zone_duty.__wrapped__ if hasattr(set_zone_duty, '__wrapped__') else None
+
+        # Track all duty changes by inspecting raw commands.
+        def _counting_sleep(seconds: float) -> None:
+            nonlocal cycle
+            cycle += 1
+            if cycle >= 3:
+                raise KeyboardInterrupt
+
+        run(cfg, conn=sim, sleep=_counting_sleep)
+
+        # Extract cpu zone duties set (excluding the final set_full_speed).
+        cpu_duties = []
+        for c in sim.raw_commands:
+            if c[0] == 0x30 and c[1] == 0x70 and len(c[2]) == 4 and c[2][0] == 0x66:
+                zone_id, duty = c[2][2], c[2][3]
+                if zone_id == 0x00 and duty != 100:  # cpu zone, not full-speed
+                    cpu_duties.append(duty)
+
+        # With a 999s window, the duty should NOT have dropped after the
+        # first high reading — the window holds the max.
+        if len(cpu_duties) >= 1:
+            assert all(d >= cpu_duties[0] for d in cpu_duties), \
+                f"Duty dropped despite spindown window: {cpu_duties}"
 
     @patch("truefan.daemon.available_backends")
     def test_unknown_sensor_override_raises(self, mock_avail, tmp_path: Path) -> None:

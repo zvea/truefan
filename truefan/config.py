@@ -12,6 +12,7 @@ from truefan.sensors import SensorClass
 DEFAULT_CONFIG_FILENAME: Final[str] = "truefan.toml"
 
 DEFAULT_POLL_INTERVAL_SECONDS: Final[int] = 15
+DEFAULT_SPINDOWN_WINDOW_SECONDS: Final[int] = 180
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -75,6 +76,7 @@ class Config:
     poll_interval_seconds: int
     curves: MappingProxyType[SensorClass, Curve]
     fans: MappingProxyType[str, FanConfig]
+    spindown_window_seconds: int = DEFAULT_SPINDOWN_WINDOW_SECONDS
     sensor_overrides: MappingProxyType[str, SensorOverride] = field(
         default_factory=lambda: MappingProxyType({}),
     )
@@ -142,6 +144,7 @@ def load_config(path: Path) -> Config:
         raise ConfigError(f"Malformed TOML in {path}: {e}")
 
     poll_interval = int(doc.get("poll_interval_seconds", DEFAULT_POLL_INTERVAL_SECONDS))
+    spindown_window = int(doc.get("spindown_window_seconds", DEFAULT_SPINDOWN_WINDOW_SECONDS))
 
     curves: dict[SensorClass, Curve] = {}
     sensor_overrides: dict[str, SensorOverride] = {}
@@ -159,6 +162,7 @@ def load_config(path: Path) -> Config:
 
     return Config(
         poll_interval_seconds=poll_interval,
+        spindown_window_seconds=spindown_window,
         curves=MappingProxyType(curves),
         sensor_overrides=MappingProxyType(sensor_overrides),
         fans=MappingProxyType(fans),
@@ -174,6 +178,7 @@ def save_config(path: Path, config: Config) -> None:
         doc = tomlkit.document()
 
     doc["poll_interval_seconds"] = config.poll_interval_seconds
+    doc["spindown_window_seconds"] = config.spindown_window_seconds
 
     # Write curves.
     if config.curves:

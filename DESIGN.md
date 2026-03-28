@@ -35,9 +35,10 @@ Runs every `poll_interval_seconds` (default 15):
 2. Compute each sensor's demanded duty via its class's interpolation curve.
 3. For each fan zone, take the max demand across all sensors mapped to it.
 4. Snap to the nearest setpoint, considering all fans in the zone.
-5. Apply via IPMI (only if changed since last cycle).
-6. Read fan RPMs. On stall: set zone to 100%, try to restart, remove the lowest setpoint for that fan, persist to config.
-7. Push metrics to Netdata via statsd (thermal load, zone duty, target RPM).
+5. Apply spindown window: the actual duty is the max of all duties computed in the last `spindown_window_seconds` (default 180). Spin-up is instant; spin-down waits for the window to clear.
+6. Apply via IPMI (only if changed since last cycle).
+7. Read fan RPMs. On stall: set zone to 100%, try to restart, remove the lowest setpoint for that fan, persist to config.
+8. Push metrics to Netdata via statsd (thermal load, zone duty, target RPM).
 
 ### Sensor backends
 

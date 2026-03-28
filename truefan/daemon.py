@@ -4,6 +4,7 @@ import logging
 import signal
 import sys
 import time
+from collections import deque
 from pathlib import Path
 from types import MappingProxyType
 from typing import Callable
@@ -162,6 +163,9 @@ def run(
             )
 
     prev_zone_duties: dict[str, int] = {}
+    # Sliding window of (timestamp, duty) per zone for conservative spindown.
+    duty_history: dict[str, deque[tuple[float, int]]] = {}
+    now = time.monotonic
 
     try:
         while True:
@@ -196,6 +200,25 @@ def run(
                 )
                 zone_duties = _check_class_failures(readings, config, zone_duties)
 
+                # Apply spindown window: track recent duties and use the max.
+                t = now()
+                window = config.spindown_window_seconds
+                for zone, zd in zone_duties.items():
+                    if zone not in duty_history:
+                        duty_history[zone] = deque()
+                    duty_history[zone].append((t, zd.duty))
+                    # Evict entries older than the window.
+                    while duty_history[zone] and duty_history[zone][0][0] < t - window:
+                        duty_history[zone].popleft()
+                    # Effective duty is the max in the window.
+                    effective = max(d for _, d in duty_history[zone])
+                    zone_duties[zone] = ZoneDuty(
+                        duty=effective,
+                        sensor_name=zd.sensor_name,
+                        temperature=zd.temperature,
+                        raw_duty=zd.raw_duty,
+                    )
+
                 # Apply duties (only if changed).
                 for zone, zd in zone_duties.items():
                     if prev_zone_duties.get(zone) != zd.duty:
@@ -229,6 +252,7 @@ def run(
                 config = load_config(config_path)
                 backends = available_backends(conn)
                 prev_zone_duties.clear()
+                duty_history.clear()
 
     except (_Shutdown, KeyboardInterrupt):
         _log.info("Shutting down")
