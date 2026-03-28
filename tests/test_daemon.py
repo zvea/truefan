@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from tests.mocks import FanSimulator
-from truefan.config import Config, Curve, FanConfig, save_config
+from truefan.config import Config, ConfigError, Curve, FanConfig, SensorOverride, load_config, save_config
 from truefan.daemon import run
 from truefan.sensors import SensorClass
 
@@ -348,3 +348,22 @@ class TestDaemonRun:
             zone_duties.setdefault(zone_id, []).append(duty)
         # CPU zone (0x00) should have been set to 100.
         assert 100 in zone_duties.get(0x00, [])
+
+    @patch("truefan.daemon.available_backends")
+    def test_unknown_sensor_override_raises(self, mock_avail, tmp_path: Path) -> None:
+        """Raises ConfigError on startup if a sensor override references an unknown sensor."""
+        from truefan.sensors import SensorReading
+        cfg = tmp_path / "truefan.toml"
+        _write_config(cfg)
+        # Append a sensor override for a nonexistent sensor.
+        with open(cfg, "a") as f:
+            f.write("\n[curves.sensor.nonexistent-sensor]\ntemp_low = 60\n")
+
+        sim = _make_sim()
+        readings = [SensorReading(
+            name="ipmi-CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+        )]
+        mock_avail.side_effect = _mock_backends_factory(readings)
+
+        with pytest.raises(ConfigError, match="nonexistent-sensor"):
+            run(cfg, conn=sim, sleep=_StopAfter(1))
