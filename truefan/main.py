@@ -4,6 +4,8 @@ import argparse
 import sys
 from pathlib import Path
 
+from importlib.metadata import version
+
 from truefan.config import DEFAULT_CONFIG_FILENAME
 
 
@@ -17,6 +19,9 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="truefan",
         description="Fan control daemon for TrueNAS SCALE.",
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {version('truefan')}",
     )
     parser.add_argument(
         "--config", type=Path, default=_default_config_path(),
