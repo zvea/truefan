@@ -170,6 +170,7 @@ The daemon pushes metrics to Netdata's statsd listener over UDP. Actual fan RPMs
 | Metric | Type | Meaning |
 |---|---|---|
 | `truefan.fan.<name>.target_rpm` | gauge | Expected RPM from the setpoint table at the current duty. Compare against actual RPM to spot anomalies. |
+| `truefan.sensor.<name>.thermal_load` | gauge | How far each sensor is between its temp_low and temp_high (0-100%). |
 | `truefan.zone.<name>.duty` | gauge | Current duty cycle % for each fan zone. |
 | `truefan.daemon.restarts` | counter | Incremented by the watchdog each time the daemon crashes and is restarted. |
 

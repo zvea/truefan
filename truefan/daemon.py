@@ -21,7 +21,7 @@ from truefan.fans import (
     set_full_speed,
     set_zone_duty,
 )
-from truefan.metrics import send_target_rpm, send_zone_duty
+from truefan.metrics import send_target_rpm, send_thermal_load, send_zone_duty
 from truefan.sensors import SensorBackend, SensorReading, available_backends
 
 _log: logging.Logger = logging.getLogger(__name__)
@@ -168,6 +168,27 @@ def run(
             try:
                 # Read sensors.
                 readings = _read_all_sensors(backends)
+
+                # Push per-sensor thermal load metrics.
+                for reading in readings:
+                    curve = config.curves.get(reading.sensor_class)
+                    if curve is None:
+                        continue
+                    override = config.sensor_overrides.get(reading.name)
+                    temp_low = curve.temp_low
+                    temp_high = curve.temp_high
+                    if override is not None:
+                        if override.temp_low is not None:
+                            temp_low = override.temp_low
+                        if override.temp_high is not None:
+                            temp_high = override.temp_high
+                    if reading.temp_max is not None and (override is None or override.temp_high is None):
+                        temp_high = reading.temp_max
+                    if temp_high == temp_low:
+                        load = 100.0
+                    else:
+                        load = max(0.0, min(100.0, (reading.temperature - temp_low) / (temp_high - temp_low) * 100))
+                    send_thermal_load(reading.name, load)
 
                 # Compute target duties.
                 zone_duties = compute_zone_duties(

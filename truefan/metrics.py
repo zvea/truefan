@@ -43,6 +43,16 @@ def send_zone_duty(
     _send(f"truefan.zone.{zone}.duty:{duty}|g", host, port)
 
 
+def send_thermal_load(
+    sensor_name: str,
+    load_pct: float,
+    host: str = DEFAULT_STATSD_HOST,
+    port: int = DEFAULT_STATSD_PORT,
+) -> None:
+    """Send a per-sensor thermal load gauge (0-100%)."""
+    _send(f"truefan.sensor.{sensor_name}.thermal_load:{load_pct:.0f}|g", host, port)
+
+
 def send_daemon_restart(
     host: str = DEFAULT_STATSD_HOST,
     port: int = DEFAULT_STATSD_PORT,

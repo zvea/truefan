@@ -2,7 +2,7 @@
 
 import socket
 
-from truefan.metrics import send_daemon_restart, send_target_rpm, send_zone_duty
+from truefan.metrics import send_daemon_restart, send_target_rpm, send_thermal_load, send_zone_duty
 
 
 def _receive_one(sock: socket.socket) -> str:
@@ -54,6 +54,19 @@ class TestSendZoneDuty:
 # #### send_daemon_restart
 # ---------------------------------------------------------------------------
 
+class TestSendThermalLoad:
+    """Tests for send_thermal_load."""
+
+    def test_sends_correct_statsd_gauge(self) -> None:
+        """Sends a correctly formatted thermal load gauge."""
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+
+            send_thermal_load("ipmi-CPU_Temp", 45.0, port=port)
+            assert _receive_one(sock) == "truefan.sensor.ipmi-CPU_Temp.thermal_load:45|g"
+
+
 class TestSendDaemonRestart:
     """Tests for send_daemon_restart."""
 
@@ -85,6 +98,10 @@ class TestNoNetdata:
     def test_daemon_restart_no_listener(self) -> None:
         """send_daemon_restart does not raise when nothing listens."""
         send_daemon_restart(port=1)
+
+    def test_thermal_load_no_listener(self) -> None:
+        """send_thermal_load does not raise when nothing listens."""
+        send_thermal_load("ipmi-CPU_Temp", 45.0, port=1)
 
     def test_unreachable_host(self) -> None:
         """Metrics to an unreachable host do not raise."""
