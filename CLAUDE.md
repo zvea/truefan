@@ -65,7 +65,7 @@ Always ask before introducing any new dependency.
 - Use built-in generic types, always parameterised: `list[int]` not `list` or `List[int]`, `dict[str, int]` not `dict` or `Dict[str, int]`, etc.
 - Use `x | None` not `Optional[x]`.
 - Prefer `@dataclass` over named tuples and dicts for structured data. Default to `@dataclass(frozen=True, kw_only=True)`.
-- Prefer character literals over Unicode escape sequences: write `"°"` not `"\u00b0"`, `"Δ"` not `"\u0394"`, etc.
+- Keep non-Python config files and external protocol strings ASCII-only. Netdata, statsd, and similar tools may not handle UTF-8 correctly.
 
 ## Units
 
