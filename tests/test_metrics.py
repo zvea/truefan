@@ -65,3 +65,29 @@ class TestSendDaemonRestart:
 
             send_daemon_restart(port=port)
             assert _receive_one(sock) == "truefan.daemon.restarts:1|c"
+
+
+# ---------------------------------------------------------------------------
+# #### No Netdata running
+# ---------------------------------------------------------------------------
+
+class TestNoNetdata:
+    """All metric functions work silently when no listener is present."""
+
+    def test_target_rpm_no_listener(self) -> None:
+        """send_target_rpm does not raise when nothing listens."""
+        send_target_rpm("FAN1", 620, port=1)
+
+    def test_zone_duty_no_listener(self) -> None:
+        """send_zone_duty does not raise when nothing listens."""
+        send_zone_duty("cpu", 50, port=1)
+
+    def test_daemon_restart_no_listener(self) -> None:
+        """send_daemon_restart does not raise when nothing listens."""
+        send_daemon_restart(port=1)
+
+    def test_unreachable_host(self) -> None:
+        """Metrics to an unreachable host do not raise."""
+        send_target_rpm("FAN1", 620, host="192.0.2.1", port=8125)
+        send_zone_duty("cpu", 50, host="192.0.2.1", port=8125)
+        send_daemon_restart(host="192.0.2.1", port=8125)

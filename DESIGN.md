@@ -175,6 +175,8 @@ The daemon pushes metrics to Netdata's statsd listener over UDP. Actual fan RPMs
 
 The daemon also logs to stderr — fan speed changes, sensor errors, stall events.
 
+To get proper chart names and units in Netdata, install `netdata/truefan.conf` into the Netdata container and restart it. This is only needed on the box running the daemon — streaming parents pick up the charts automatically.
+
 ### Failsafe
 
 - **Crash:** watchdog sets all fans to 100%, restarts the daemon.
