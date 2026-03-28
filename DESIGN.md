@@ -25,7 +25,7 @@ TrueFan is a fan control daemon for TrueNAS SCALE systems based on Supermicro X1
 
 A small **watchdog parent** spawns the daemon as a child. If the child dies unexpectedly, the parent sets all fans to 100% and restarts it. On SIGTERM, the parent forwards the signal; the child sets fans to full speed and exits; the parent follows.
 
-A PID file (`/var/run/truefan.pid`) with OS-level `flock` prevents multiple instances. `truefan run` acquires the lock before starting the watchdog; the lock is released automatically on process exit (including `kill -9`). `truefan init` and `truefan recalibrate` check the lock and refuse to run while the daemon is active. `truefan sensors` is read-only and skips the check.
+A PID file (`/var/run/truefan.pid`) with OS-level `flock` prevents multiple instances. `truefan run` acquires the lock before starting the watchdog; the lock is released automatically on process exit (including `kill -9`). `truefan init` and `truefan recalibrate` acquire the lock for the duration of their work, preventing conflicts with a running daemon or each other. `truefan sensors` is read-only and skips the check.
 
 ### Main loop
 
@@ -75,7 +75,7 @@ Default class-to-zone mapping:
 
 ### Calibration
 
-`truefan init` steps through duty levels for each fan in 10% increments from 100% down, recording the RPM at each step. This builds a setpoint table (duty % → expected RPM) per fan. The lowest duty that kept the fan spinning becomes the minimum setpoint. `truefan recalibrate` re-runs this on an existing config (e.g. after cleaning or replacing fans).
+`truefan init` steps through duty levels for each fan in 10% increments from 100% down, recording the RPM at each step. This builds a setpoint table (duty % → expected RPM) per fan. The lowest duty that kept the fan spinning becomes the minimum setpoint. `truefan recalibrate` re-runs this on an existing config (e.g. after cleaning or replacing fans). Calibration monitors IPMI temperatures throughout and aborts immediately if any sensor approaches its critical threshold.
 
 During normal operation, if a fan stalls above its lowest setpoint, the daemon kicks the zone to 100%, removes that setpoint (raising the effective minimum), and saves the updated config.
 
@@ -86,9 +86,10 @@ Single TOML file via `tomlkit` — comments and formatting survive reads and wri
 ```toml
 # Send SIGHUP to the daemon to reload this file.
 poll_interval_seconds = 15
+spindown_window_seconds = 180
 
 # Curves map sensor temps to fan duty cycles, one per sensor class.
-# Defaults are built in — add a section here to override. Example:
+# Written by init for detected sensor classes. Example:
 #
 # [curves.<class>]
 # temp_low = 35      # °C — below this, fans run at duty_low
@@ -156,7 +157,7 @@ truefan/
     sensors/
         __init__.py  # common SensorReading type, backend interface
         ipmi.py      # IPMI temp sensors
-        smart.py     # SATA/SAS via smartctl/pySMART
+        smart.py     # SATA/SAS via smartctl -j
         nvme.py      # NVMe via nvme-cli
         lmsensors.py # lm-sensors via sensors -j
     calibrate.py     # ramp-down test + stall detection/recovery
@@ -188,7 +189,7 @@ To get proper chart names and units in Netdata, install `netdata/truefan.conf` i
 
 ## CLI
 
-- **`truefan init [--config PATH]`** — detect fans, run calibration (build setpoint tables), write a config with calibrated values and one example curve section. Refuses if the config already exists.
+- **`truefan init [--config PATH]`** — detect sensors and fans, run calibration (build setpoint tables), write a config with curves for detected sensor classes and calibrated fan setpoints. Refuses if the config already exists.
 - **`truefan run [--config PATH]`** — start the daemon (wrapped by the watchdog). Refuses if no config exists, pointing you to `truefan init`.
 - **`truefan recalibrate [--config PATH]`** — re-run calibration on an existing config. Rebuilds setpoint tables in place and exits.
 - **`truefan sensors`** — show all detected temperature and fan RPM sensors with current readings, classifications, and hardware thresholds. Useful for verifying what the daemon sees before running it.
