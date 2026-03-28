@@ -24,7 +24,7 @@ For any non-trivial feature:
 
 Do not combine steps. Do not proceed to the next step without the user's reply.
 
-Run unit tests after every non-trivial change. Always invoke pytest with `-n auto` to use parallel workers.
+Run unit tests after every non-trivial change with `pytest`.
 
 ## Naming over Numbering
 
@@ -38,7 +38,7 @@ Group tests by function under test, with a `#### function_name` header for each 
 
 ### Coverage
 
-Check with `pytest -n auto --cov --cov-report=term-missing`. Fill gaps that have a clear real-world trigger and test a meaningful contract. Skip defensive guards for impossible inputs and dunder methods. Do not target a percentage.
+Check with `pytest --cov --cov-report=term-missing`. Fill gaps that have a clear real-world trigger and test a meaningful contract. Skip defensive guards for impossible inputs and dunder methods. Do not target a percentage.
 
 ## Git
 

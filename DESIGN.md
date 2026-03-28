@@ -5,7 +5,7 @@ TrueFan is a fan control daemon for TrueNAS SCALE systems based on Supermicro X1
 ## Goals
 
 - **Minimize noise** while staying within safe thermal limits.
-- **Auto-detect** sensors and fans. Classify by class (cpu, drive, nvme, ambient) and apply sensible default curves.
+- **Auto-detect** sensors and fans. Classify by class (cpu, drive, nvme, ambient, other) and apply sensible default curves. Use hardware-reported thermal limits when available.
 - **Read multiple sensor backends** — IPMI for board-level sensors, SMART for SATA/SAS drives, `nvme-cli` for NVMe, lm-sensors for the rest. Auto-detected based on what's available.
 - **Self-calibrate** how slow each fan can go without stalling, adapting as fans age or collect dust.
 - **Fail safe** — go to 100% on crash, total sensor class failure, or stalled fan.
@@ -23,11 +23,13 @@ TrueFan is a fan control daemon for TrueNAS SCALE systems based on Supermicro X1
 
 ### Process model
 
-A small **watchdog parent** spawns the daemon as a child. If the child dies unexpectedly, the parent sets all fans to 100% and restarts it. On SIGTERM, the parent forwards the signal; the child restores IPMI to automatic fan control and exits; the parent follows.
+A small **watchdog parent** spawns the daemon as a child. If the child dies unexpectedly, the parent sets all fans to 100% and restarts it. On SIGTERM, the parent forwards the signal; the child sets fans to full speed and exits; the parent follows.
+
+A PID file (`/var/run/truefan.pid`) with OS-level `flock` prevents multiple instances. `truefan run` acquires the lock before starting the watchdog; the lock is released automatically on process exit (including `kill -9`). `truefan init` and `truefan recalibrate` check the lock and refuse to run while the daemon is active. `truefan sensors` is read-only and skips the check.
 
 ### Main loop
 
-Runs every `poll_interval_seconds` (default 5):
+Runs every `poll_interval_seconds` (default 15):
 
 1. Read all sensors from every available backend.
 2. Compute each sensor's demanded duty via its class's interpolation curve.
@@ -39,22 +41,22 @@ Runs every `poll_interval_seconds` (default 5):
 
 ### Sensor backends
 
-Each backend scans for available sensors and returns readings (name, class, temperature in °C) every poll cycle. Hardware changes (e.g. a drive added or removed) are picked up in the next poll — no config change or restart needed.
+Each backend scans for available sensors and returns readings every poll cycle. Each reading has a unique id (`<backend>/<device-path>`, e.g. `smart/sda`, `lmsensors/coretemp-isa-0000/Core 0`), a sensor class, a temperature, and optional hardware-reported thresholds (`temp_max`, `temp_crit`). Hardware changes (e.g. a drive added or removed) are picked up in the next poll — no config change or restart needed.
 
 - **IPMI** — CPU, ambient, chipset via `pyghmi`.
 - **SMART** — SATA/SAS drive temps via `pySMART` or `smartctl`.
 - **NVMe** — NVMe temps via `nvme smart-log`.
 - **lm-sensors** — everything else the kernel exposes, via `sensors -j`.
 
-Each sensor is classified into a **sensor class** (cpu, ambient, drive, nvme). Curves are per class, not per individual sensor.
+Each sensor is classified into a **sensor class** (cpu, ambient, drive, nvme, other). Curves are per class. If a sensor reports a `temp_max` from the hardware, it overrides the curve's `temp_high` for that sensor.
 
 ### Fan control
 
-The daemon enables IPMI full manual fan mode on startup and restores automatic mode on exit. Duty cycles are set via Supermicro-specific IPMI raw commands. The X11SCA-F has two fan zones: **cpu** and **peripheral**. A zone can have multiple fans — duty is set per zone, but each fan has its own RPM sensor. Stall detection and setpoint tracking are per fan. A zone's effective minimum duty is determined by whichever fan in the zone has the highest minimum setpoint.
+On startup the daemon resets BMC fan sensor thresholds (to prevent the BMC from overriding manual duty cycles) and enables IPMI full manual fan mode. On exit it sets fans to full speed. Duty cycles are set via Supermicro-specific IPMI raw commands. The X11SCA-F has two fan zones: **cpu** and **peripheral**. A zone can have multiple fans — duty is set per zone, but each fan has its own RPM sensor. Stall detection and setpoint tracking are per fan. A zone's effective minimum duty is determined by whichever fan in the zone has the highest minimum setpoint.
 
 ### Control algorithm
 
-Each sensor class has an interpolation curve: `temp_low`, `temp_high`, `duty_low`, `duty_high`. Between the two temps, duty is linearly interpolated. Below `temp_low` → `duty_low`. Above `temp_high` → `duty_high` (typically 100%). The resulting duty is then snapped up to the nearest available setpoint for the fan.
+Each sensor class has an interpolation curve: `temp_low`, `temp_high`, `duty_low`, `duty_high`. If a sensor reports a hardware `temp_max`, it overrides `temp_high` for that sensor. Between the two temps, duty is linearly interpolated. Below `temp_low` → `duty_low`. Above `temp_high` → `duty_high` (typically 100%). The resulting duty is then snapped up to the nearest available setpoint for the fan.
 
 Each curve feeds one or more fan zones. Per zone, the highest demand wins.
 
@@ -66,10 +68,11 @@ Default class-to-zone mapping:
 | ambient | peripheral |
 | drive | peripheral |
 | nvme | peripheral |
+| other | peripheral |
 
 ### Calibration
 
-`truefan init` steps through duty levels for each fan, recording the RPM at each step. This builds a setpoint table (duty % → expected RPM) per fan. The lowest duty that kept the fan spinning becomes the minimum setpoint, rounded up to the nearest 5%. `truefan calibrate` re-runs this on an existing config (e.g. after cleaning or replacing fans).
+`truefan init` steps through duty levels for each fan in 10% increments from 100% down, recording the RPM at each step. This builds a setpoint table (duty % → expected RPM) per fan. The lowest duty that kept the fan spinning becomes the minimum setpoint. `truefan recalibrate` re-runs this on an existing config (e.g. after cleaning or replacing fans).
 
 During normal operation, if a fan stalls above its lowest setpoint, the daemon kicks the zone to 100%, removes that setpoint (raising the effective minimum), and saves the updated config.
 
@@ -127,12 +130,20 @@ zone = "peripheral"
 ```
 truefan/
     __init__.py
-    main.py          # entry point, argument parsing (init / run / calibrate)
+    main.py          # entry point, argument parsing
+    commands/
+        __init__.py
+        init.py      # detect fans, calibrate, generate config
+        run.py       # start the daemon
+        recalibrate.py # re-run fan calibration
+        sensors.py   # show all detected sensors
+        reload.py    # send SIGHUP to running daemon
     watchdog.py      # parent process — spawn, monitor, failsafe
     daemon.py        # main poll loop
     config.py        # load/save TOML, config dataclasses
     control.py       # interpolation math, max-demand-wins logic
-    fans.py          # fan duty commands, RPM reads, zone control via pyghmi
+    bmc.py           # BMC connection abstraction (IpmiConnection ABC)
+    fans.py          # fan duty commands, RPM reads, zone control
     sensors/
         __init__.py  # common SensorReading type, backend interface
         ipmi.py      # IPMI temp sensors
@@ -140,24 +151,35 @@ truefan/
         nvme.py      # NVMe via nvme-cli
         lmsensors.py # lm-sensors via sensors -j
     calibrate.py     # ramp-down test + stall detection/recovery
+    pidfile.py       # PID file locking for single-instance enforcement
     metrics.py       # statsd UDP push to Netdata
 ```
 
 ### Observability
 
-Per-fan target RPM goes to Netdata's statsd listener over UDP (e.g. `truefan.fan.FAN1.target_rpm:620|g`). The target RPM is the expected RPM from the fan's setpoint table at the current duty. Netdata already has actual RPM via IPMI — comparing the two reveals anomalies. The daemon itself just logs to stderr — fan speed changes, sensor errors, stall events.
+The daemon pushes metrics to Netdata's statsd listener over UDP. Actual fan RPMs and sensor temperatures are already available to Netdata via IPMI and lm-sensors — these metrics cover what only the daemon knows.
+
+| Metric | Type | Meaning |
+|---|---|---|
+| `truefan.fan.<name>.target_rpm` | gauge | Expected RPM from the setpoint table at the current duty. Compare against actual RPM to spot anomalies. |
+| `truefan.zone.<name>.duty` | gauge | Current duty cycle % for each fan zone. |
+| `truefan.daemon.restarts` | counter | Incremented by the watchdog each time the daemon crashes and is restarted. |
+
+The daemon also logs to stderr — fan speed changes, sensor errors, stall events.
 
 ### Failsafe
 
 - **Crash:** watchdog sets all fans to 100%, restarts the daemon.
 - **Sensor failure:** a single failed sensor is ignored (logged as a warning); the remaining sensors in its class still drive the curve. If *all* sensors in a class fail, the affected zones go to 100%.
 - **Stall:** zone goes to 100%, recovery attempted, lowest setpoint removed and config saved.
-- **Clean shutdown:** IPMI restored to automatic fan control.
+- **Clean shutdown:** fans set to full speed.
 
 ## CLI
 
 - **`truefan init [--config PATH]`** — detect fans, run calibration (build setpoint tables), write a config with calibrated values and one example curve section. Refuses if the config already exists.
 - **`truefan run [--config PATH]`** — start the daemon (wrapped by the watchdog). Refuses if no config exists, pointing you to `truefan init`.
-- **`truefan calibrate [--config PATH]`** — re-run calibration on an existing config. Rebuilds setpoint tables in place and exits.
+- **`truefan recalibrate [--config PATH]`** — re-run calibration on an existing config. Rebuilds setpoint tables in place and exits.
+- **`truefan sensors`** — show all detected temperature and fan RPM sensors with current readings, classifications, and hardware thresholds. Useful for verifying what the daemon sees before running it.
+- **`truefan reload`** — send SIGHUP to the running daemon to reload its config. Errors if no daemon is running.
 
 Default config path: `truefan.toml` next to the script. `--config` overrides.

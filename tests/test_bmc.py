@@ -1,0 +1,175 @@
+"""Tests for truefan.bmc."""
+
+from unittest.mock import MagicMock, call, patch
+
+from truefan.bmc import IpmitoolConnection
+
+
+_FAN_CSV = (
+    "CPU_FAN1,1300,RPM,ok\n"
+    "CPU_FAN2,,,ns\n"
+    "SYS_FAN1,900,RPM,ok\n"
+    "SYS_FAN2,1100,RPM,ok\n"
+    "SYS_FAN3,900,RPM,ok\n"
+)
+
+# Verbose CSV: name,value,unit,status,entity,entity_type,sensor_type,col7,col8,col9,unc,ucr,...
+_TEMP_CSV_V = (
+    "CPU Temp,31,degrees C,ok,3.1,Processor,Temperature,20.000,11.000,80.000,100.000,100.000,95.000,5.000,5.000,10.000,0.000,255.000\n"
+    "PCH Temp,46,degrees C,ok,7.1,System Board,Temperature,20.000,11.000,84.000,105.000,90.000,85.000,5.000,5.000,10.000,0.000,255.000\n"
+    "System Temp,33,degrees C,ok,7.2,System Board,Temperature,20.000,11.000,79.000,90.000,85.000,80.000,5.000,5.000,10.000,0.000,255.000\n"
+    "M2NVMeSSD Temp1,,,ns,7.48,System Board,Temperature,20.000,11.000,79.000,90.000,85.000,80.000,5.000,5.000,10.000,0.000,255.000\n"
+    "DIMMA1 Temp,34,degrees C,ok,32.1,Memory Device,Temperature,20.000,11.000,79.000,90.000,85.000,80.000,5.000,5.000,10.000,0.000,255.000\n"
+)
+
+
+def _make_result(stdout: str = "") -> MagicMock:
+    result = MagicMock()
+    result.stdout = stdout.encode()
+    return result
+
+
+# ---------------------------------------------------------------------------
+# #### IpmitoolConnection.list_fans
+# ---------------------------------------------------------------------------
+
+class TestListFans:
+    """Tests for IpmitoolConnection.list_fans."""
+
+    @patch("truefan.bmc.subprocess.run")
+    def test_parses_active_fans(self, mock_run) -> None:  # noqa: ANN001
+        """Active fans return their RPM."""
+        mock_run.return_value = _make_result(_FAN_CSV)
+        conn = IpmitoolConnection()
+        fans = conn.list_fans()
+        rpm_map = {name: rpm for name, rpm in fans}
+        assert rpm_map["CPU_FAN1"] == 1300
+        assert rpm_map["SYS_FAN1"] == 900
+        assert rpm_map["SYS_FAN2"] == 1100
+
+    @patch("truefan.bmc.subprocess.run")
+    def test_inactive_fans_return_none(self, mock_run) -> None:  # noqa: ANN001
+        """Fans with no reading return None."""
+        mock_run.return_value = _make_result(_FAN_CSV)
+        conn = IpmitoolConnection()
+        fans = conn.list_fans()
+        rpm_map = {name: rpm for name, rpm in fans}
+        assert rpm_map["CPU_FAN2"] is None
+
+    @patch("truefan.bmc.subprocess.run")
+    def test_calls_correct_command(self, mock_run) -> None:  # noqa: ANN001
+        """Calls ipmitool sdr type fan -c."""
+        mock_run.return_value = _make_result(_FAN_CSV)
+        conn = IpmitoolConnection()
+        conn.list_fans()
+        args = mock_run.call_args[0][0]
+        assert args == ["/usr/bin/ipmitool", "sdr", "type", "fan", "-c"]
+
+
+# ---------------------------------------------------------------------------
+# #### IpmitoolConnection.list_temperature_sensors
+# ---------------------------------------------------------------------------
+
+class TestListTemperatureSensors:
+    """Tests for IpmitoolConnection.list_temperature_sensors."""
+
+    @patch("truefan.bmc.subprocess.run")
+    def test_parses_active_sensors(self, mock_run) -> None:  # noqa: ANN001
+        """Active sensors return their temperature."""
+        mock_run.return_value = _make_result(_TEMP_CSV_V)
+        conn = IpmitoolConnection()
+        temps = conn.list_temperature_sensors()
+        temp_map = {s.name: s.temperature for s in temps}
+        assert temp_map["CPU Temp"] == 31.0
+        assert temp_map["PCH Temp"] == 46.0
+        assert temp_map["DIMMA1 Temp"] == 34.0
+
+    @patch("truefan.bmc.subprocess.run")
+    def test_inactive_sensors_return_none(self, mock_run) -> None:  # noqa: ANN001
+        """Sensors with no reading return None temperature."""
+        mock_run.return_value = _make_result(_TEMP_CSV_V)
+        conn = IpmitoolConnection()
+        temps = conn.list_temperature_sensors()
+        temp_map = {s.name: s.temperature for s in temps}
+        assert temp_map["M2NVMeSSD Temp1"] is None
+
+    @patch("truefan.bmc.subprocess.run")
+    def test_calls_correct_command(self, mock_run) -> None:  # noqa: ANN001
+        """Calls ipmitool sdr type temperature -c -v."""
+        mock_run.return_value = _make_result(_TEMP_CSV_V)
+        conn = IpmitoolConnection()
+        conn.list_temperature_sensors()
+        args = mock_run.call_args[0][0]
+        assert args == ["/usr/bin/ipmitool", "sdr", "type", "temperature", "-c", "-v"]
+
+    @patch("truefan.bmc.subprocess.run")
+    def test_parses_thresholds(self, mock_run) -> None:  # noqa: ANN001
+        """Upper non-critical and upper critical thresholds are parsed."""
+        mock_run.return_value = _make_result(_TEMP_CSV_V)
+        conn = IpmitoolConnection()
+        temps = conn.list_temperature_sensors()
+        cpu = [s for s in temps if s.name == "CPU Temp"][0]
+        assert cpu.upper_non_critical == 80.0
+        assert cpu.upper_critical == 100.0
+        pch = [s for s in temps if s.name == "PCH Temp"][0]
+        assert pch.upper_non_critical == 84.0
+        assert pch.upper_critical == 105.0
+
+
+# ---------------------------------------------------------------------------
+# #### IpmitoolConnection.raw_command
+# ---------------------------------------------------------------------------
+
+class TestRawCommand:
+    """Tests for IpmitoolConnection.raw_command."""
+
+    @patch("truefan.bmc.subprocess.run")
+    def test_builds_correct_command(self, mock_run) -> None:  # noqa: ANN001
+        """Builds correct ipmitool raw command line."""
+        mock_run.return_value = _make_result("")
+        conn = IpmitoolConnection()
+        conn.raw_command(0x30, 0x45, bytes([0x01, 0x01]))
+        args = mock_run.call_args[0][0]
+        assert args == ["/usr/bin/ipmitool", "raw", "0x30", "0x45", "0x01", "0x01"]
+
+    @patch("truefan.bmc.subprocess.run")
+    def test_returns_empty_on_no_output(self, mock_run) -> None:  # noqa: ANN001
+        """Returns empty bytes when ipmitool returns no output."""
+        mock_run.return_value = _make_result("")
+        conn = IpmitoolConnection()
+        result = conn.raw_command(0x30, 0x45, bytes([0x01, 0x01]))
+        assert result == b""
+
+    @patch("truefan.bmc.subprocess.run")
+    def test_parses_hex_response(self, mock_run) -> None:  # noqa: ANN001
+        """Parses hex byte response from ipmitool."""
+        mock_run.return_value = _make_result(" 01 02 ff\n")
+        conn = IpmitoolConnection()
+        result = conn.raw_command(0x06, 0x01)
+        assert result == bytes([0x01, 0x02, 0xFF])
+
+
+# ---------------------------------------------------------------------------
+# #### IpmitoolConnection.set_sensor_thresholds
+# ---------------------------------------------------------------------------
+
+class TestSetSensorThresholds:
+    """Tests for IpmitoolConnection.set_sensor_thresholds."""
+
+    @patch("truefan.bmc.subprocess.run")
+    def test_calls_lower_and_upper(self, mock_run) -> None:  # noqa: ANN001
+        """Calls ipmitool sensor thresh with lower and upper separately."""
+        mock_run.return_value = _make_result("")
+        conn = IpmitoolConnection()
+        conn.set_sensor_thresholds("CPU_FAN1", (100, 100, 100), (25000, 25000, 25000))
+        assert mock_run.call_count == 2
+        lower_args = mock_run.call_args_list[0][0][0]
+        upper_args = mock_run.call_args_list[1][0][0]
+        assert lower_args == [
+            "/usr/bin/ipmitool", "sensor", "thresh", "CPU_FAN1",
+            "lower", "100", "100", "100",
+        ]
+        assert upper_args == [
+            "/usr/bin/ipmitool", "sensor", "thresh", "CPU_FAN1",
+            "upper", "25000", "25000", "25000",
+        ]
