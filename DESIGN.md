@@ -10,7 +10,7 @@ TrueFan is a fan control daemon for TrueNAS SCALE systems based on Supermicro X1
 - **Self-calibrate** how slow each fan can go without stalling, adapting as fans age or collect dust.
 - **Fail safe** — go to 100% on crash, total sensor class failure, or stalled fan.
 - **Keep a single config file** for user settings and daemon-learned state. Comments and formatting survive when the daemon writes back to it.
-- **Expose per-fan target RPM** to Netdata over statsd (actual RPM already available via IPMI).
+- **Expose metrics** to Netdata over statsd — per-sensor thermal load, per-zone duty, per-fan target RPM, and daemon restart count.
 
 ## Non-goals
 
@@ -37,15 +37,15 @@ Runs every `poll_interval_seconds` (default 15):
 4. Snap to the nearest setpoint, considering all fans in the zone.
 5. Apply via IPMI (only if changed since last cycle).
 6. Read fan RPMs. On stall: set zone to 100%, try to restart, remove the lowest setpoint for that fan, persist to config.
-7. Push per-fan target RPM to Netdata via statsd.
+7. Push metrics to Netdata via statsd (thermal load, zone duty, target RPM).
 
 ### Sensor backends
 
 Each backend scans for available sensors and returns readings every poll cycle. Each reading has a unique id (`<backend>-<device-path>` with spaces replaced by underscores, e.g. `smart-sda`, `lmsensors-coretemp-isa-0000-Core_0`), a sensor class, a temperature, and optional hardware-reported thresholds (`temp_max`, `temp_crit`). Hardware changes (e.g. a drive added or removed) are picked up in the next poll — no config change or restart needed.
 
-- **IPMI** — CPU, ambient, chipset via `pyghmi`.
-- **SMART** — SATA/SAS drive temps via `pySMART` or `smartctl`.
-- **NVMe** — NVMe temps via `nvme smart-log`.
+- **IPMI** — CPU, ambient, chipset via `ipmitool`.
+- **SMART** — SATA/SAS drive temps via `smartctl -j`.
+- **NVMe** — NVMe temps via `nvme smart-log -o json`.
 - **lm-sensors** — everything else the kernel exposes, via `sensors -j`.
 
 Each sensor is classified into a **sensor class** (cpu, ambient, drive, nvme, other). Curves are per class. If a sensor reports a `temp_max` from the hardware, it overrides the curve's `temp_high` for that sensor.
@@ -58,7 +58,7 @@ On startup the daemon resets BMC fan sensor thresholds (to prevent the BMC from 
 
 Each sensor class has an interpolation curve: `temp_low`, `temp_high`, `duty_low`, `duty_high`. If a sensor reports a hardware `temp_max`, it overrides `temp_high` for that sensor. Between the two temps, duty is linearly interpolated. Below `temp_low` → `duty_low`. Above `temp_high` → `duty_high` (typically 100%). The resulting duty is then snapped to the nearest available setpoint for the fan.
 
-Individual sensors can override any curve parameter via `[curves.sensor."<name>"]` sections in the config. This is useful for components that run hotter than others in the same class (e.g. a NIC at 60°C idle vs DIMMs at 35°C, both classified as `other`). Unspecified fields inherit from the class curve.
+Individual sensors can override any curve parameter via `[curves.sensor.<name>]` sections in the config. This is useful for components that run hotter than others in the same class (e.g. a NIC at 60°C idle vs DIMMs at 35°C, both classified as `other`). Unspecified fields inherit from the class curve.
 
 Each curve feeds one or more fan zones. Per zone, the highest demand wins.
 
@@ -84,7 +84,7 @@ Single TOML file via `tomlkit` — comments and formatting survive reads and wri
 
 ```toml
 # Send SIGHUP to the daemon to reload this file.
-poll_interval_seconds = 5
+poll_interval_seconds = 15
 
 # Curves map sensor temps to fan duty cycles, one per sensor class.
 # Defaults are built in — add a section here to override. Example:
@@ -92,7 +92,7 @@ poll_interval_seconds = 5
 # [curves.<class>]
 # temp_low = 35      # °C — below this, fans run at duty_low
 # temp_high = 80     # °C — above this, fans run at duty_high
-# duty_low = 25      # % — minimum demanded duty (snapped up to nearest setpoint)
+# duty_low = 25      # % — minimum demanded duty (snapped to nearest setpoint)
 # duty_high = 100    # % — maximum demanded duty
 # fan_zones = ["cpu", "peripheral"]
 
@@ -150,7 +150,7 @@ truefan/
     daemon.py        # main poll loop
     config.py        # load/save TOML, config dataclasses
     control.py       # interpolation math, max-demand-wins logic
-    bmc.py           # BMC connection abstraction (IpmiConnection ABC)
+    bmc.py           # BMC connection abstraction (BmcConnection ABC)
     fans.py          # fan duty commands, RPM reads, zone control
     sensors/
         __init__.py  # common SensorReading type, backend interface
