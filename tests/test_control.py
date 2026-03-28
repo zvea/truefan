@@ -3,7 +3,12 @@
 from types import MappingProxyType
 
 from truefan.config import Curve, FanConfig, SensorOverride
-from truefan.control import compute_zone_duties, interpolate_duty, snap_duty_to_setpoint
+from truefan.control import (
+    compute_thermal_load,
+    compute_zone_duties,
+    interpolate_duty,
+    snap_duty_to_setpoint,
+)
 from truefan.sensors import SensorClass, SensorReading
 
 
@@ -92,6 +97,81 @@ class TestInterpolateDuty:
         """None override uses the curve's temp_high."""
         curve = _curve(temp_low=30, temp_high=50, duty_low=20, duty_high=100)
         assert interpolate_duty(curve, 40.0, temp_high_override=None) == 60.0
+
+
+# ---------------------------------------------------------------------------
+# #### compute_thermal_load
+# ---------------------------------------------------------------------------
+
+class TestComputeThermalLoad:
+    """Tests for compute_thermal_load."""
+
+    def test_midpoint(self) -> None:
+        """Midpoint temperature returns 50% load."""
+        curve = _curve(temp_low=30, temp_high=50)
+        reading = SensorReading(
+            name="s", sensor_class=SensorClass.DRIVE, temperature=40.0,
+        )
+        assert compute_thermal_load(reading, curve) == 50.0
+
+    def test_below_temp_low(self) -> None:
+        """Below temp_low clamps to 0%."""
+        curve = _curve(temp_low=30, temp_high=50)
+        reading = SensorReading(
+            name="s", sensor_class=SensorClass.DRIVE, temperature=20.0,
+        )
+        assert compute_thermal_load(reading, curve) == 0.0
+
+    def test_above_temp_high(self) -> None:
+        """Above temp_high clamps to 100%."""
+        curve = _curve(temp_low=30, temp_high=50)
+        reading = SensorReading(
+            name="s", sensor_class=SensorClass.DRIVE, temperature=60.0,
+        )
+        assert compute_thermal_load(reading, curve) == 100.0
+
+    def test_degenerate_equal_temps(self) -> None:
+        """When temp_low == temp_high, returns 100%."""
+        curve = _curve(temp_low=40, temp_high=40)
+        reading = SensorReading(
+            name="s", sensor_class=SensorClass.DRIVE, temperature=40.0,
+        )
+        assert compute_thermal_load(reading, curve) == 100.0
+
+    def test_override_changes_range(self) -> None:
+        """Per-sensor override adjusts the effective temperature range."""
+        curve = _curve(temp_low=30, temp_high=80)
+        override = SensorOverride(temp_low=60, temp_high=95)
+        reading = SensorReading(
+            name="s", sensor_class=SensorClass.OTHER, temperature=67.0,
+        )
+        load_without = compute_thermal_load(reading, curve)
+        load_with = compute_thermal_load(reading, curve, override)
+        # 67°C on 30-80 → 74%, on 60-95 → 20%
+        assert load_with < load_without
+
+    def test_hardware_temp_max_overrides_curve(self) -> None:
+        """Hardware temp_max replaces temp_high when no override sets it."""
+        curve = _curve(temp_low=30, temp_high=80)
+        reading = SensorReading(
+            name="s", sensor_class=SensorClass.OTHER,
+            temperature=55.0, temp_max=105.0,
+        )
+        load = compute_thermal_load(reading, curve)
+        # 55°C on 30-105 → 33.3%
+        assert round(load, 1) == 33.3
+
+    def test_override_temp_high_beats_hardware_temp_max(self) -> None:
+        """When override sets temp_high, hardware temp_max is ignored."""
+        curve = _curve(temp_low=30, temp_high=80)
+        override = SensorOverride(temp_high=60)
+        reading = SensorReading(
+            name="s", sensor_class=SensorClass.OTHER,
+            temperature=45.0, temp_max=105.0,
+        )
+        load = compute_thermal_load(reading, curve, override)
+        # 45°C on 30-60 → 50% (temp_max=105 ignored because override sets temp_high)
+        assert load == 50.0
 
 
 # ---------------------------------------------------------------------------

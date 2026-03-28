@@ -5,6 +5,7 @@ import signal
 import sys
 import time
 from collections import deque
+from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Callable
@@ -12,7 +13,7 @@ from typing import Callable
 from truefan.bmc import BmcConnection, IpmitoolConnection
 from truefan.calibrate import remove_lowest_setpoint
 from truefan.config import Config, ConfigError, FanConfig, load_config, save_config
-from truefan.control import ZoneDuty, compute_zone_duties
+from truefan.control import ZoneDuty, compute_thermal_load, compute_zone_duties
 from truefan.fans import (
     FanRpm,
     enable_manual_control,
@@ -107,11 +108,7 @@ def _detect_stalls(
             changed = True
 
     if changed:
-        config = Config(
-            poll_interval_seconds=config.poll_interval_seconds,
-            curves=config.curves,
-            fans=MappingProxyType(fans),
-        )
+        config = replace(config, fans=MappingProxyType(fans))
         save_config(config_path, config)
         _log.info("Config saved after stall recovery")
 
@@ -179,20 +176,10 @@ def run(
                     if curve is None:
                         continue
                     override = config.sensor_overrides.get(reading.name)
-                    temp_low = curve.temp_low
-                    temp_high = curve.temp_high
-                    if override is not None:
-                        if override.temp_low is not None:
-                            temp_low = override.temp_low
-                        if override.temp_high is not None:
-                            temp_high = override.temp_high
-                    if reading.temp_max is not None and (override is None or override.temp_high is None):
-                        temp_high = reading.temp_max
-                    if temp_high == temp_low:
-                        load = 100.0
-                    else:
-                        load = max(0.0, min(100.0, (reading.temperature - temp_low) / (temp_high - temp_low) * 100))
-                    send_thermal_load(reading.name, load)
+                    send_thermal_load(
+                        reading.name,
+                        compute_thermal_load(reading, curve, override),
+                    )
 
                 # Compute target duties.
                 zone_duties = compute_zone_duties(

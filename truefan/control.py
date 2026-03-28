@@ -64,6 +64,28 @@ def _apply_override(curve: Curve, override: SensorOverride) -> Curve:
     )
 
 
+def compute_thermal_load(
+    reading: SensorReading,
+    curve: Curve,
+    override: SensorOverride | None = None,
+) -> float:
+    """Compute how far a sensor is between its effective temp_low and temp_high (0-100%).
+
+    Resolves per-sensor overrides and hardware temp_max using the same
+    precedence as compute_zone_duties: override fields replace curve fields,
+    and hardware temp_max replaces temp_high only when no override sets it.
+    """
+    if override is not None:
+        curve = _apply_override(curve, override)
+    temp_low = curve.temp_low
+    temp_high = curve.temp_high
+    if reading.temp_max is not None and (override is None or override.temp_high is None):
+        temp_high = reading.temp_max
+    if temp_high == temp_low:
+        return 100.0
+    return max(0.0, min(100.0, (reading.temperature - temp_low) / (temp_high - temp_low) * 100))
+
+
 def compute_zone_duties(
     readings: list[SensorReading],
     curves: MappingProxyType[SensorClass, Curve],
