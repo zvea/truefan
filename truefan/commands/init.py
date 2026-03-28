@@ -10,12 +10,15 @@ from typing import Callable
 from truefan.bmc import BmcConnection, IpmitoolConnection
 from truefan.calibrate import calibrate_fans
 from truefan.config import (
+    DEFAULT_CURVES,
     DEFAULT_POLL_INTERVAL_SECONDS,
     Config,
+    Curve,
     FanConfig,
     save_config,
 )
 from truefan.fans import detect_fans, reset_thresholds
+from truefan.sensors import SensorClass, available_backends
 from truefan.pidfile import PidFile, PidFileError
 
 _log: logging.Logger = logging.getLogger(__name__)
@@ -35,6 +38,20 @@ def _do_init(
     for name, zone in sorted(fan_zones.items()):
         print(f"  {name} -> {zone}")
 
+    print("Detecting sensors...")
+    backends = available_backends(conn)
+    detected_classes: set[SensorClass] = set()
+    for backend in backends:
+        for reading in backend.scan():
+            detected_classes.add(reading.sensor_class)
+    curves: dict[SensorClass, Curve] = {
+        cls: DEFAULT_CURVES[cls] for cls in detected_classes if cls in DEFAULT_CURVES
+    }
+    for cls in sorted(detected_classes, key=lambda c: c.value):
+        print(f"  {cls.value}")
+    if not detected_classes:
+        print("  (none)")
+
     print("Resetting BMC thresholds...")
     reset_thresholds(conn)
 
@@ -49,7 +66,7 @@ def _do_init(
 
     config = Config(
         poll_interval_seconds=DEFAULT_POLL_INTERVAL_SECONDS,
-        curves=MappingProxyType({}),
+        curves=MappingProxyType(curves),
         fans=MappingProxyType(fans),
     )
     save_config(config_path, config)

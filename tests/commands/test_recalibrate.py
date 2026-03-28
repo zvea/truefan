@@ -6,6 +6,7 @@ from types import MappingProxyType
 import pytest
 
 from tests.mocks import FanSimulator, noop_sleep
+from truefan.bmc import TemperatureSensorData
 from truefan.commands.recalibrate import run_recalibrate
 from truefan.config import Config, Curve, FanConfig, load_config, save_config
 from truefan.pidfile import PidFile
@@ -37,11 +38,16 @@ def _write_initial_config(path: Path) -> None:
 
 
 def _make_sim() -> FanSimulator:
-    """Create a FanSimulator matching the config layout."""
-    sim = FanSimulator(fans={
-        "CPU_FAN1": {"max_rpm": 1500, "stall_below": 30},
-        "SYS_FAN1": {"max_rpm": 1200, "stall_below": 20},
-    })
+    """Create a FanSimulator matching the config layout with temp sensors."""
+    sim = FanSimulator(
+        fans={
+            "CPU_FAN1": {"max_rpm": 1500, "stall_below": 30},
+            "SYS_FAN1": {"max_rpm": 1200, "stall_below": 20},
+        },
+        temps=[
+            TemperatureSensorData(name="CPU Temp", temperature=35.0, upper_non_critical=80.0, upper_critical=100.0),
+        ],
+    )
     sim.set_fan_zone("CPU_FAN1", "cpu")
     sim.set_fan_zone("SYS_FAN1", "peripheral")
     return sim

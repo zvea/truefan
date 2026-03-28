@@ -121,7 +121,7 @@ def load_config(path: Path) -> Config:
 
     poll_interval = int(doc.get("poll_interval_seconds", DEFAULT_POLL_INTERVAL_SECONDS))
 
-    curves = dict(DEFAULT_CURVES)
+    curves: dict[SensorClass, Curve] = {}
     for name, table in doc.get("curves", {}).items():
         sensor_class, curve = _parse_curve(name, table)
         curves[sensor_class] = curve
@@ -138,10 +138,7 @@ def load_config(path: Path) -> Config:
 
 
 def save_config(path: Path, config: Config) -> None:
-    """Write config back to TOML, preserving comments and formatting.
-
-    Only daemon-managed sections (fans/setpoints) are updated.
-    """
+    """Write config back to TOML, preserving comments and formatting."""
     try:
         text = path.read_text()
         doc = tomlkit.parse(text)
@@ -149,6 +146,31 @@ def save_config(path: Path, config: Config) -> None:
         doc = tomlkit.document()
 
     doc["poll_interval_seconds"] = config.poll_interval_seconds
+
+    # Write curves.
+    if config.curves:
+        curves_in_doc = doc.get("curves")
+        if curves_in_doc is None:
+            curves_in_doc = tomlkit.table(is_super_table=True)
+            doc["curves"] = curves_in_doc
+        for cls, curve in config.curves.items():
+            curve_table = curves_in_doc.get(cls.value)
+            if curve_table is None:
+                curve_table = tomlkit.table()
+                curves_in_doc[cls.value] = curve_table
+            curve_table["temp_low"] = curve.temp_low
+            curve_table["temp_high"] = curve.temp_high
+            curve_table["duty_low"] = curve.duty_low
+            curve_table["duty_high"] = curve.duty_high
+            curve_table["fan_zones"] = sorted(curve.fan_zones)
+        # Remove curves no longer in config.
+        for name in list(curves_in_doc):
+            try:
+                SensorClass(name)
+            except ValueError:
+                continue
+            if SensorClass(name) not in config.curves:
+                del curves_in_doc[name]
 
     fans_in_doc = doc.get("fans")
     if fans_in_doc is None:

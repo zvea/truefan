@@ -26,7 +26,7 @@ class TestLoadConfig:
     """Tests for load_config."""
 
     def test_minimal_config(self, tmp_path: Path) -> None:
-        """Config with just poll_interval and fans uses default curves."""
+        """Config with just poll_interval and fans has no curves."""
         cfg = tmp_path / "truefan.toml"
         cfg.write_text(
             'poll_interval_seconds = 5\n'
@@ -40,7 +40,7 @@ class TestLoadConfig:
         )
         config = load_config(cfg)
         assert config.poll_interval_seconds == 5
-        assert config.curves == DEFAULT_CURVES
+        assert len(config.curves) == 0
         assert "FAN1" in config.fans
         assert config.fans["FAN1"].zone == "cpu"
         assert dict(config.fans["FAN1"].setpoints) == {25: 320, 100: 1500}
@@ -74,7 +74,7 @@ class TestLoadConfig:
         assert drive_curve.fan_zones == frozenset({"peripheral"})
 
     def test_partial_curve_overrides(self, tmp_path: Path) -> None:
-        """Unspecified sensor classes keep their default curves."""
+        """Only explicitly listed sensor classes have curves."""
         cfg = tmp_path / "truefan.toml"
         cfg.write_text(
             'poll_interval_seconds = 5\n'
@@ -95,9 +95,7 @@ class TestLoadConfig:
         )
         config = load_config(cfg)
         assert config.curves[SensorClass.CPU].temp_low == 40
-        assert config.curves[SensorClass.DRIVE] == DEFAULT_CURVES[SensorClass.DRIVE]
-        assert config.curves[SensorClass.AMBIENT] == DEFAULT_CURVES[SensorClass.AMBIENT]
-        assert config.curves[SensorClass.NVME] == DEFAULT_CURVES[SensorClass.NVME]
+        assert len(config.curves) == 1
 
     def test_missing_poll_interval_uses_default(self, tmp_path: Path) -> None:
         """Missing poll_interval_seconds falls back to the default."""
@@ -334,3 +332,33 @@ class TestSaveConfig:
         reloaded = load_config(cfg_path)
         assert "FAN1" in reloaded.fans
         assert "FAN2" not in reloaded.fans
+
+    def test_remove_curve(self, tmp_path: Path) -> None:
+        """Saving with a curve removed drops it from the file."""
+        cfg_path = tmp_path / "truefan.toml"
+        config = Config(
+            poll_interval_seconds=5,
+            curves=MappingProxyType({
+                SensorClass.CPU: DEFAULT_CURVES[SensorClass.CPU],
+                SensorClass.DRIVE: DEFAULT_CURVES[SensorClass.DRIVE],
+            }),
+            fans=MappingProxyType({
+                "FAN1": FanConfig(
+                    zone="cpu",
+                    setpoints=MappingProxyType({25: 320, 100: 1500}),
+                ),
+            }),
+        )
+        save_config(cfg_path, config)
+        # Now save again without the DRIVE curve.
+        updated = Config(
+            poll_interval_seconds=5,
+            curves=MappingProxyType({
+                SensorClass.CPU: DEFAULT_CURVES[SensorClass.CPU],
+            }),
+            fans=config.fans,
+        )
+        save_config(cfg_path, updated)
+        reloaded = load_config(cfg_path)
+        assert SensorClass.CPU in reloaded.curves
+        assert SensorClass.DRIVE not in reloaded.curves

@@ -8,8 +8,9 @@ from typing import Callable
 
 from truefan.bmc import BmcConnection, IpmitoolConnection
 from truefan.calibrate import calibrate_fans
-from truefan.config import Config, FanConfig, load_config, save_config
+from truefan.config import DEFAULT_CURVES, Config, Curve, FanConfig, load_config, save_config
 from truefan.fans import detect_fans, reset_thresholds
+from truefan.sensors import SensorClass, available_backends
 from truefan.pidfile import PidFile, PidFileError
 
 
@@ -54,6 +55,23 @@ def _do_recalibrate(
     for name, zone in sorted(fan_zones.items()):
         print(f"  {name} -> {zone}")
 
+    print("Detecting sensors...")
+    backends = available_backends(conn)
+    detected_classes: set[SensorClass] = set()
+    for backend in backends:
+        for reading in backend.scan():
+            detected_classes.add(reading.sensor_class)
+    # Merge: keep user curve overrides, add defaults for newly detected
+    # classes, remove curves for classes no longer present.
+    curves: dict[SensorClass, Curve] = {}
+    for cls in detected_classes:
+        if cls in config.curves:
+            curves[cls] = config.curves[cls]
+        elif cls in DEFAULT_CURVES:
+            curves[cls] = DEFAULT_CURVES[cls]
+    for cls in sorted(detected_classes, key=lambda c: c.value):
+        print(f"  {cls.value}")
+
     print("Resetting BMC thresholds...")
     reset_thresholds(conn)
 
@@ -68,7 +86,7 @@ def _do_recalibrate(
 
     updated = Config(
         poll_interval_seconds=config.poll_interval_seconds,
-        curves=config.curves,
+        curves=MappingProxyType(curves),
         fans=MappingProxyType(fans),
     )
     save_config(config_path, updated)

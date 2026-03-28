@@ -6,19 +6,27 @@ from pathlib import Path
 import pytest
 
 from tests.mocks import FanSimulator, noop_sleep
+from truefan.bmc import TemperatureSensorData
 from truefan.commands.init import run_init
 from truefan.config import load_config
 from truefan.pidfile import PidFile
+from truefan.sensors import SensorClass
 
 
 def _make_sim() -> FanSimulator:
-    """Create a FanSimulator matching the X11SCA-F layout."""
-    sim = FanSimulator(fans={
-        "CPU_FAN1": {"max_rpm": 1500, "stall_below": 30},
-        "SYS_FAN1": {"max_rpm": 1200, "stall_below": 20},
-        "SYS_FAN2": {"max_rpm": 1100, "stall_below": 20},
-        "SYS_FAN3": {"max_rpm": 900, "stall_below": 30},
-    })
+    """Create a FanSimulator matching the X11SCA-F layout with temp sensors."""
+    sim = FanSimulator(
+        fans={
+            "CPU_FAN1": {"max_rpm": 1500, "stall_below": 30},
+            "SYS_FAN1": {"max_rpm": 1200, "stall_below": 20},
+            "SYS_FAN2": {"max_rpm": 1100, "stall_below": 20},
+            "SYS_FAN3": {"max_rpm": 900, "stall_below": 30},
+        },
+        temps=[
+            TemperatureSensorData(name="CPU Temp", temperature=35.0, upper_non_critical=80.0, upper_critical=100.0),
+            TemperatureSensorData(name="System Temp", temperature=33.0, upper_non_critical=79.0, upper_critical=90.0),
+        ],
+    )
     sim.set_fan_zone("CPU_FAN1", "cpu")
     sim.set_fan_zone("SYS_FAN1", "peripheral")
     sim.set_fan_zone("SYS_FAN2", "peripheral")
@@ -81,14 +89,17 @@ class TestRunInit:
             run_init(cfg, conn=sim, sleep=noop_sleep)
         assert not cfg.exists()
 
-    def test_default_curves_used(self, tmp_path: Path) -> None:
-        """Config uses default curves (no user overrides)."""
+    def test_detected_classes_get_curves(self, tmp_path: Path) -> None:
+        """Only detected sensor classes get curves in the config."""
         cfg = tmp_path / "truefan.toml"
         run_init(cfg, conn=_make_sim(), sleep=noop_sleep)
         config = load_config(cfg)
-        # No user curve overrides — defaults apply
-        from truefan.config import DEFAULT_CURVES
-        assert config.curves == DEFAULT_CURVES
+        # Mock has CPU and ambient (System Temp) IPMI sensors.
+        assert SensorClass.CPU in config.curves
+        assert SensorClass.AMBIENT in config.curves
+        # No drive or NVMe sensors in the mock.
+        assert SensorClass.DRIVE not in config.curves
+        assert SensorClass.NVME not in config.curves
 
     def test_refuses_while_daemon_running(self, tmp_path: Path) -> None:
         """Refuses to run when the daemon PID file is locked."""
