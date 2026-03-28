@@ -23,7 +23,7 @@ from truefan.fans import (
     set_full_speed,
     set_zone_duty,
 )
-from truefan.metrics import send_target_rpm, send_thermal_load, send_zone_duty
+from truefan.metrics import send_target_rpm, send_temperature, send_thermal_load, send_zone_duty
 from truefan.sensors import SensorBackend, SensorReading, available_backends
 
 _log: logging.Logger = logging.getLogger(__name__)
@@ -170,8 +170,9 @@ def run(
                 # Read sensors.
                 readings = _read_all_sensors(backends)
 
-                # Push per-sensor thermal load metrics.
+                # Push per-sensor metrics.
                 for reading in readings:
+                    send_temperature(reading.name, reading.temperature)
                     curve = config.curves.get(reading.sensor_class)
                     if curve is None:
                         continue

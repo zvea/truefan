@@ -2,7 +2,13 @@
 
 import socket
 
-from truefan.metrics import send_daemon_restart, send_target_rpm, send_thermal_load, send_zone_duty
+from truefan.metrics import (
+    send_daemon_restart,
+    send_target_rpm,
+    send_temperature,
+    send_thermal_load,
+    send_zone_duty,
+)
 
 
 def _receive_one(sock: socket.socket) -> str:
@@ -51,7 +57,7 @@ class TestSendZoneDuty:
 
 
 # ---------------------------------------------------------------------------
-# #### send_daemon_restart
+# #### send_thermal_load
 # ---------------------------------------------------------------------------
 
 class TestSendThermalLoad:
@@ -65,6 +71,27 @@ class TestSendThermalLoad:
 
             send_thermal_load("ipmi-CPU_Temp", 45.0, port=port)
             assert _receive_one(sock) == "truefan.sensor.ipmi-CPU_Temp.thermal_load:45|g"
+
+
+# ---------------------------------------------------------------------------
+# #### send_temperature
+# ---------------------------------------------------------------------------
+
+class TestSendTemperature:
+    """Tests for send_temperature."""
+
+    def test_sends_correct_statsd_gauge(self) -> None:
+        """Sends a correctly formatted temperature gauge in °C."""
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+
+            send_temperature("ipmi-CPU_Temp", 42.5, port=port)
+            assert _receive_one(sock) == "truefan.sensor.ipmi-CPU_Temp.temperature:42|g"
+
+    def test_no_listener_does_not_raise(self) -> None:
+        """send_temperature does not raise when nothing listens."""
+        send_temperature("ipmi-CPU_Temp", 42.5, port=1)
 
 
 class TestSendDaemonRestart:

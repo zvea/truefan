@@ -53,6 +53,16 @@ def send_thermal_load(
     _send(f"truefan.sensor.{sensor_name}.thermal_load:{load_pct:.0f}|g", host, port)
 
 
+def send_temperature(
+    sensor_name: str,
+    temp_c: float,
+    host: str = DEFAULT_STATSD_HOST,
+    port: int = DEFAULT_STATSD_PORT,
+) -> None:
+    """Send a per-sensor temperature gauge in °C."""
+    _send(f"truefan.sensor.{sensor_name}.temperature:{temp_c:.0f}|g", host, port)
+
+
 def send_daemon_restart(
     host: str = DEFAULT_STATSD_HOST,
     port: int = DEFAULT_STATSD_PORT,
