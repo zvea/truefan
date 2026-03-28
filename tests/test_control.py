@@ -106,10 +106,15 @@ class TestSnapDutyToSetpoint:
         setpoints = MappingProxyType({20: 300, 40: 600, 60: 900, 100: 1500})
         assert snap_duty_to_setpoint(40.0, setpoints) == 40
 
-    def test_between_setpoints(self) -> None:
-        """Between two setpoints, snaps up to the higher one."""
+    def test_between_setpoints_snaps_nearest_up(self) -> None:
+        """Between two setpoints, closer to the higher — snaps up."""
         setpoints = MappingProxyType({20: 300, 40: 600, 60: 900, 100: 1500})
         assert snap_duty_to_setpoint(35.0, setpoints) == 40
+
+    def test_between_setpoints_snaps_nearest_down(self) -> None:
+        """Between two setpoints, closer to the lower — snaps down."""
+        setpoints = MappingProxyType({20: 300, 40: 600, 60: 900, 100: 1500})
+        assert snap_duty_to_setpoint(25.0, setpoints) == 20
 
     def test_below_lowest(self) -> None:
         """Below the lowest setpoint, returns the lowest."""
@@ -183,8 +188,8 @@ class TestComputeZoneDuties:
         ]
 
         result = compute_zone_duties(readings, curves, fans)
-        # Ambient demands more — should snap to 100 (nearest setpoint >= ~89)
-        assert result["peripheral"].duty == 100
+        # Ambient demands ~89% — nearest setpoint is 80 (9.3 away vs 100 at 10.7)
+        assert result["peripheral"].duty == 80
 
     def test_sensor_class_without_curve_ignored(self) -> None:
         """Sensors with no matching curve are ignored."""

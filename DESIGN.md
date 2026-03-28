@@ -34,7 +34,7 @@ Runs every `poll_interval_seconds` (default 15):
 1. Read all sensors from every available backend.
 2. Compute each sensor's demanded duty via its class's interpolation curve.
 3. For each fan zone, take the max demand across all sensors mapped to it.
-4. Pick the lowest setpoint that meets or exceeds the demand, considering all fans in the zone.
+4. Snap to the nearest setpoint, considering all fans in the zone.
 5. Apply via IPMI (only if changed since last cycle).
 6. Read fan RPMs. On stall: set zone to 100%, try to restart, remove the lowest setpoint for that fan, persist to config.
 7. Push per-fan target RPM to Netdata via statsd.
@@ -56,7 +56,7 @@ On startup the daemon resets BMC fan sensor thresholds (to prevent the BMC from 
 
 ### Control algorithm
 
-Each sensor class has an interpolation curve: `temp_low`, `temp_high`, `duty_low`, `duty_high`. If a sensor reports a hardware `temp_max`, it overrides `temp_high` for that sensor. Between the two temps, duty is linearly interpolated. Below `temp_low` → `duty_low`. Above `temp_high` → `duty_high` (typically 100%). The resulting duty is then snapped up to the nearest available setpoint for the fan.
+Each sensor class has an interpolation curve: `temp_low`, `temp_high`, `duty_low`, `duty_high`. If a sensor reports a hardware `temp_max`, it overrides `temp_high` for that sensor. Between the two temps, duty is linearly interpolated. Below `temp_low` → `duty_low`. Above `temp_high` → `duty_high` (typically 100%). The resulting duty is then snapped to the nearest available setpoint for the fan.
 
 Individual sensors can override any curve parameter via `[curves.sensor."<name>"]` sections in the config. This is useful for components that run hotter than others in the same class (e.g. a NIC at 60°C idle vs DIMMs at 35°C, both classified as `other`). Unspecified fields inherit from the class curve.
 

@@ -45,15 +45,12 @@ def interpolate_duty(
 
 
 def snap_duty_to_setpoint(duty: float, setpoints: MappingProxyType[int, int]) -> int:
-    """Round a demanded duty up to the lowest setpoint that meets or exceeds it.
+    """Snap a demanded duty to the nearest setpoint.
 
-    Returns the highest setpoint if duty exceeds all of them.
+    Returns the setpoint whose duty % is closest to the demand.
     """
     duties = sorted(setpoints)
-    for d in duties:
-        if d >= duty:
-            return d
-    return duties[-1]
+    return min(duties, key=lambda d: abs(d - duty))
 
 
 def _apply_override(curve: Curve, override: SensorOverride) -> Curve:
