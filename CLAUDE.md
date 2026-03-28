@@ -34,7 +34,7 @@ Prefer descriptive names over sequential numbers — in code (test functions, id
 
 ### Structure
 
-Group tests by function under test, with a `#### function_name` header for each group.
+Group tests by function under test using a `class TestFunctionName` with a `# #### function_name` comment header. Test directory mirrors source: `tests/sensors/`, `tests/commands/`. Shared test fixtures live in `tests/mocks.py`.
 
 ### Coverage
 
@@ -58,7 +58,7 @@ Always ask before introducing any new dependency.
 
 ## Python Style Guide
 
-- All imports at module level only — no inline or function-scoped imports.
+- All imports at module level only — except in `main.py` (lazy subcommand loading) and `sensors/__init__.py` (circular import avoidance). Comment the reason.
 - Every module and function must have a docstring: a brief description, plus any non-obvious behaviour or constraints worth noting. Omit obvious parameter/return documentation.
 - All functions and methods must have type annotations on parameters and return values.
 - Annotate module-level constants with `Final` and use immutable container types (`frozenset`, `tuple`, `MappingProxyType`) rather than mutable ones.
@@ -70,3 +70,7 @@ Always ask before introducing any new dependency.
 ## Units
 
 All temperatures are in °C. Convert at the boundary.
+
+## Naming
+
+Sensor names use hyphens as path separators and underscores for spaces: `ipmi-CPU_Temp`, `lmsensors-coretemp-isa-0000-Core_0`. Built by `sensor_name()` in `sensors/__init__.py`. This format works in TOML bare keys, statsd metric names, and log output.
