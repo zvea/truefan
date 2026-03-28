@@ -3,8 +3,10 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-.venv/
+.venv*/
+.claude/
 experiments/out/
 .coverage
 htmlcov/
 truefan.toml
+.nfs*
