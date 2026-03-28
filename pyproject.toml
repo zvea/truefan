@@ -9,6 +9,11 @@ description = "Fan control daemon for TrueNAS"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
+[project.urls]
+Homepage = "https://github.com/zvea/truefan"
+Source = "https://github.com/zvea/truefan"
+Issues = "https://github.com/zvea/truefan/issues"
+
 keywords = ["cooling", "daemon", "fan-control", "homelab", "ipmi", "monitoring", "server", "supermicro", "temperature", "thermal", "truenas"]
 classifiers = [
     "Development Status :: 4 - Beta",
