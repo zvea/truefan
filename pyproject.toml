@@ -21,14 +21,14 @@ classifiers = [
     "Topic :: System :: Systems Administration",
     "Topic :: Utilities",
 ]
+dependencies = [
+    "tomlkit>=0.12",
+]
 
 [project.urls]
 Homepage = "https://github.com/zvea/truefan"
 Source = "https://github.com/zvea/truefan"
 Issues = "https://github.com/zvea/truefan/issues"
-dependencies = [
-    "tomlkit>=0.12",
-]
 
 [project.scripts]
 truefan = "truefan.main:main"
