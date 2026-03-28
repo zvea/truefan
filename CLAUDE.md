@@ -66,3 +66,7 @@ Always ask before introducing any new dependency.
 - Use `x | None` not `Optional[x]`.
 - Prefer `@dataclass` over named tuples and dicts for structured data. Default to `@dataclass(frozen=True, kw_only=True)`.
 - Prefer character literals over Unicode escape sequences: write `"°"` not `"\u00b0"`, `"Δ"` not `"\u0394"`, etc.
+
+## Units
+
+All temperatures are in °C. Convert at the boundary.
