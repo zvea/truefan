@@ -1,8 +1,11 @@
 """Tests for truefan.bmc."""
 
+import subprocess
 from unittest.mock import MagicMock, call, patch
 
-from truefan.bmc import IpmitoolConnection
+import pytest
+
+from truefan.bmc import BmcError, IpmitoolConnection
 
 
 _FAN_CSV = (
@@ -173,3 +176,38 @@ class TestSetSensorThresholds:
             "/usr/bin/ipmitool", "sensor", "thresh", "CPU_FAN1",
             "upper", "25000", "25000", "25000",
         ]
+
+
+# ---------------------------------------------------------------------------
+# #### IpmitoolConnection._run error reporting
+# ---------------------------------------------------------------------------
+
+class TestRunErrorMessage:
+    """Tests for error messages when ipmitool fails."""
+
+    @patch("truefan.bmc.subprocess.run")
+    def test_error_contains_full_command(self, mock_run) -> None:  # noqa: ANN001
+        """BmcError message includes the exact command as a readable string."""
+        mock_run.side_effect = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["/usr/bin/ipmitool", "sensor", "thresh", "CPU_FAN2",
+                 "lower", "100", "100", "100"],
+            stderr=b"Error setting threshold: Unspecified error",
+        )
+        conn = IpmitoolConnection()
+        with pytest.raises(BmcError, match=(
+            r"/usr/bin/ipmitool sensor thresh CPU_FAN2 lower 100 100 100"
+        )):
+            conn.set_sensor_thresholds("CPU_FAN2", (100, 100, 100), (25000, 25000, 25000))
+
+    @patch("truefan.bmc.subprocess.run")
+    def test_error_contains_stderr(self, mock_run) -> None:  # noqa: ANN001
+        """BmcError message includes ipmitool's stderr output."""
+        mock_run.side_effect = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["/usr/bin/ipmitool", "raw", "0x30", "0x45"],
+            stderr=b"Unable to send RAW command",
+        )
+        conn = IpmitoolConnection()
+        with pytest.raises(BmcError, match=r"Unable to send RAW command"):
+            conn.raw_command(0x30, 0x45)

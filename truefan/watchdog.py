@@ -57,8 +57,8 @@ def start(
                 os._exit(0)
             except SystemExit as e:
                 os._exit(e.code if isinstance(e.code, int) else 0)
-            except Exception:
-                _log.exception("Daemon crashed")
+            except Exception as e:
+                _log.error("Daemon crashed: %s", e)
                 os._exit(1)
 
         # Parent process — wait for child.
