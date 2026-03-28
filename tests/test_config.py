@@ -146,6 +146,38 @@ class TestLoadConfig:
         with pytest.raises(ConfigError):
             load_config(cfg)
 
+    def test_sensor_overrides(self, tmp_path: Path) -> None:
+        """Per-sensor overrides are parsed from [curves.sensor.*] sections."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text(
+            'poll_interval_seconds = 5\n'
+            '\n'
+            '[curves.other]\n'
+            'temp_low = 30\n'
+            'temp_high = 80\n'
+            'duty_low = 25\n'
+            'duty_high = 100\n'
+            'fan_zones = ["peripheral"]\n'
+            '\n'
+            '[curves.sensor."lmsensors/mlx5-pci-0200/sensor0"]\n'
+            'temp_low = 60\n'
+            'temp_high = 95\n'
+            '\n'
+            '[fans.FAN1]\n'
+            'zone = "peripheral"\n'
+            '\n'
+            '[fans.FAN1.setpoints]\n'
+            '25 = 320\n'
+            '100 = 1500\n'
+        )
+        config = load_config(cfg)
+        assert "lmsensors/mlx5-pci-0200/sensor0" in config.sensor_overrides
+        override = config.sensor_overrides["lmsensors/mlx5-pci-0200/sensor0"]
+        assert override.temp_low == 60
+        assert override.temp_high == 95
+        assert override.duty_low is None
+        assert override.fan_zones is None
+
     def test_unknown_sensor_class(self, tmp_path: Path) -> None:
         """Curve for an unknown sensor class raises ConfigError."""
         cfg = tmp_path / "truefan.toml"

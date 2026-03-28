@@ -2,7 +2,7 @@
 
 from types import MappingProxyType
 
-from truefan.config import Curve, FanConfig
+from truefan.config import Curve, FanConfig, SensorOverride
 from truefan.control import compute_zone_duties, interpolate_duty, snap_duty_to_setpoint
 from truefan.sensors import SensorClass, SensorReading
 
@@ -269,3 +269,55 @@ class TestComputeZoneDuties:
         result_with = compute_zone_duties(readings_with_max, curves, fans)
         # With hardware temp_max, demand is lower → lower setpoint
         assert result_with["peripheral"].duty < result_without["peripheral"].duty
+
+    def test_sensor_override_changes_curve(self) -> None:
+        """A per-sensor override adjusts the curve for that sensor only."""
+        curves = MappingProxyType({
+            SensorClass.OTHER: _curve(
+                temp_low=30, temp_high=80, duty_low=20, duty_high=100,
+                fan_zones=frozenset({"peripheral"}),
+            ),
+        })
+        fans = MappingProxyType({"FAN1": _fan_config(zone="peripheral")})
+        # Two "other" sensors at the same temp.
+        readings = [
+            _reading(name="lmsensors/mlx5-pci-0200/sensor0", temperature=67.0,
+                     sensor_class=SensorClass.OTHER),
+            _reading(name="ipmi/PCH Temp", temperature=67.0,
+                     sensor_class=SensorClass.OTHER),
+        ]
+        # Override only the NIC — raise temp_low so 67°C is barely above idle.
+        overrides = MappingProxyType({
+            "lmsensors/mlx5-pci-0200/sensor0": SensorOverride(temp_low=60, temp_high=95),
+        })
+        result_without = compute_zone_duties(readings, curves, fans)
+        result_with = compute_zone_duties(readings, curves, fans, overrides)
+        # With override, NIC demand is much lower; PCH still uses class curve.
+        # PCH at 67°C on 30-80 curve: 20 + 37/50*80 = 79.2 → snap 80
+        # NIC at 67°C on 60-95 curve: 20 + 7/35*80 = 36.0 → snap 40
+        # Max is still PCH → same result as without override.
+        assert result_with["peripheral"].duty == result_without["peripheral"].duty
+
+    def test_sensor_override_reduces_demand_when_dominant(self) -> None:
+        """Per-sensor override reduces demand when that sensor is the driver."""
+        curves = MappingProxyType({
+            SensorClass.OTHER: _curve(
+                temp_low=30, temp_high=80, duty_low=20, duty_high=100,
+                fan_zones=frozenset({"peripheral"}),
+            ),
+        })
+        fans = MappingProxyType({"FAN1": _fan_config(zone="peripheral")})
+        # Only the NIC — no other sensor to drive demand.
+        readings = [
+            _reading(name="lmsensors/mlx5-pci-0200/sensor0", temperature=67.0,
+                     sensor_class=SensorClass.OTHER),
+        ]
+        overrides = MappingProxyType({
+            "lmsensors/mlx5-pci-0200/sensor0": SensorOverride(temp_low=60, temp_high=95),
+        })
+        result_without = compute_zone_duties(readings, curves, fans)
+        result_with = compute_zone_duties(readings, curves, fans, overrides)
+        # Without override: 67°C on 30-80 → ~79% → snap 80
+        # With override: 67°C on 60-95 → ~36% → snap 40
+        assert result_with["peripheral"].duty < result_without["peripheral"].duty
+        assert result_with["peripheral"].duty == 40

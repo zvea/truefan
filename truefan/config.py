@@ -1,6 +1,6 @@
 """Configuration loading, saving, and data structures."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Final
@@ -50,6 +50,17 @@ DEFAULT_CURVES: Final[MappingProxyType[SensorClass, Curve]] = MappingProxyType({
 
 
 @dataclass(frozen=True, kw_only=True)
+class SensorOverride:
+    """Per-sensor curve override. None fields inherit from the class curve."""
+
+    temp_low: int | None = None
+    temp_high: int | None = None
+    duty_low: int | None = None
+    duty_high: int | None = None
+    fan_zones: frozenset[str] | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
 class FanConfig:
     """Calibrated state for a single fan."""
 
@@ -59,14 +70,14 @@ class FanConfig:
 
 @dataclass(frozen=True, kw_only=True)
 class Config:
-    """Complete in-memory configuration.
-
-    Curves are merged from built-in defaults and user overrides.
-    """
+    """Complete in-memory configuration."""
 
     poll_interval_seconds: int
     curves: MappingProxyType[SensorClass, Curve]
     fans: MappingProxyType[str, FanConfig]
+    sensor_overrides: MappingProxyType[str, SensorOverride] = field(
+        default_factory=lambda: MappingProxyType({}),
+    )
 
 
 class ConfigError(Exception):
@@ -91,6 +102,17 @@ def _parse_curve(name: str, table: dict) -> tuple[SensorClass, Curve]:
         duty_low=int(table["duty_low"]),
         duty_high=int(table["duty_high"]),
         fan_zones=frozenset(table["fan_zones"]),
+    )
+
+
+def _parse_sensor_override(table: dict) -> SensorOverride:
+    """Parse a per-sensor override from TOML."""
+    return SensorOverride(
+        temp_low=int(table["temp_low"]) if "temp_low" in table else None,
+        temp_high=int(table["temp_high"]) if "temp_high" in table else None,
+        duty_low=int(table["duty_low"]) if "duty_low" in table else None,
+        duty_high=int(table["duty_high"]) if "duty_high" in table else None,
+        fan_zones=frozenset(table["fan_zones"]) if "fan_zones" in table else None,
     )
 
 
@@ -122,9 +144,14 @@ def load_config(path: Path) -> Config:
     poll_interval = int(doc.get("poll_interval_seconds", DEFAULT_POLL_INTERVAL_SECONDS))
 
     curves: dict[SensorClass, Curve] = {}
+    sensor_overrides: dict[str, SensorOverride] = {}
     for name, table in doc.get("curves", {}).items():
-        sensor_class, curve = _parse_curve(name, table)
-        curves[sensor_class] = curve
+        if name == "sensor":
+            for sensor_name, override_table in table.items():
+                sensor_overrides[sensor_name] = _parse_sensor_override(override_table)
+        else:
+            sensor_class, curve = _parse_curve(name, table)
+            curves[sensor_class] = curve
 
     fans: dict[str, FanConfig] = {}
     for name, table in doc.get("fans", {}).items():
@@ -133,6 +160,7 @@ def load_config(path: Path) -> Config:
     return Config(
         poll_interval_seconds=poll_interval,
         curves=MappingProxyType(curves),
+        sensor_overrides=MappingProxyType(sensor_overrides),
         fans=MappingProxyType(fans),
     )
 

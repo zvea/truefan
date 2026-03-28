@@ -159,7 +159,9 @@ def run(
                 readings = _read_all_sensors(backends)
 
                 # Compute target duties.
-                zone_duties = compute_zone_duties(readings, config.curves, config.fans)
+                zone_duties = compute_zone_duties(
+                    readings, config.curves, config.fans, config.sensor_overrides,
+                )
                 zone_duties = _check_class_failures(readings, config, zone_duties)
 
                 # Apply duties (only if changed).

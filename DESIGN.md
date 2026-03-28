@@ -58,6 +58,8 @@ On startup the daemon resets BMC fan sensor thresholds (to prevent the BMC from 
 
 Each sensor class has an interpolation curve: `temp_low`, `temp_high`, `duty_low`, `duty_high`. If a sensor reports a hardware `temp_max`, it overrides `temp_high` for that sensor. Between the two temps, duty is linearly interpolated. Below `temp_low` → `duty_low`. Above `temp_high` → `duty_high` (typically 100%). The resulting duty is then snapped up to the nearest available setpoint for the fan.
 
+Individual sensors can override any curve parameter via `[curves.sensor."<name>"]` sections in the config. This is useful for components that run hotter than others in the same class (e.g. a NIC at 60°C idle vs DIMMs at 35°C, both classified as `other`). Unspecified fields inherit from the class curve.
+
 Each curve feeds one or more fan zones. Per zone, the highest demand wins.
 
 Default class-to-zone mapping:
@@ -100,6 +102,12 @@ temp_high = 45
 duty_low = 25
 duty_high = 100
 fan_zones = ["peripheral"]
+
+# Per-sensor overrides — only the fields you want to change.
+# Useful for components that run hotter than others in their class.
+[curves.sensor."lmsensors/mlx5-pci-0200/sensor0"]
+temp_low = 60
+temp_high = 95
 
 # Learned via calibration — duty % = expected RPM.
 # The daemon also removes the lowest setpoint on stall.
