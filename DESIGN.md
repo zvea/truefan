@@ -7,7 +7,7 @@ TrueFan is a fan control daemon for TrueNAS SCALE systems based on Supermicro X1
 - **Minimize noise** while staying within safe thermal limits.
 - **Auto-detect** sensors and fans. Classify by class (cpu, drive, nvme, ambient, other) and apply sensible default curves. Use hardware-reported thermal limits when available.
 - **Read multiple sensor backends** — IPMI for board-level sensors, SMART for SATA/SAS drives, `nvme-cli` for NVMe, lm-sensors for the rest. Auto-detected based on what's available.
-- **Self-calibrate** how slow each fan can go without stalling, adapting as fans age or collect dust.
+- **Self-calibrate** how slow each fan can go without stalling, can be recalibrated as fans age or collect dust.
 - **Fail safe** — go to 100% on crash, total sensor class failure, or stalled fan.
 - **Keep a single config file** for user settings and daemon-learned state. Comments and formatting survive when the daemon writes back to it.
 - **Expose metrics** to Netdata over statsd — per-sensor thermal load, per-zone duty, per-fan target RPM, and daemon restart count.
