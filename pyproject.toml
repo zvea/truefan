@@ -22,3 +22,10 @@ include = ["truefan*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["truefan"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
