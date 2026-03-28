@@ -8,6 +8,7 @@ import csv
 import io
 import logging
 import subprocess
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Final
@@ -15,6 +16,8 @@ from typing import Final
 _log: logging.Logger = logging.getLogger(__name__)
 
 _IPMITOOL: Final[str] = "/usr/bin/ipmitool"
+_MAX_ATTEMPTS: Final[int] = 3
+_RETRY_DELAY_SECONDS: Final[float] = 1.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -60,19 +63,33 @@ class IpmitoolConnection(BmcConnection):
     """BmcConnection backed by ipmitool subprocess calls."""
 
     def _run(self, args: list[str]) -> str:
-        """Run an ipmitool command and return stdout."""
+        """Run an ipmitool command and return stdout.
+
+        Retries up to three times with a one-second delay between attempts
+        to ride out transient BMC errors (e.g. SDR lookup failures).
+        """
         cmd = [_IPMITOOL] + args
         cmd_str = " ".join(cmd)
         _log.debug("Running: %s", cmd_str)
-        try:
-            result = subprocess.run(cmd, capture_output=True, check=True)
-        except subprocess.CalledProcessError as e:
-            stderr = e.stderr.decode().strip() if e.stderr else ""
-            msg = f"{cmd_str} failed (exit {e.returncode})"
-            if stderr:
-                msg += f": {stderr}"
-            raise BmcError(msg) from e
-        return result.stdout.decode()
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            try:
+                result = subprocess.run(cmd, capture_output=True, check=True)
+            except subprocess.CalledProcessError as e:
+                if attempt < _MAX_ATTEMPTS:
+                    stderr = e.stderr.decode().strip() if e.stderr else ""
+                    msg = f"{cmd_str} attempt {attempt}/{_MAX_ATTEMPTS} failed"
+                    if stderr:
+                        msg += f": {stderr}"
+                    _log.warning(msg)
+                    time.sleep(_RETRY_DELAY_SECONDS)
+                    continue
+                stderr = e.stderr.decode().strip() if e.stderr else ""
+                msg = f"{cmd_str} failed (exit {e.returncode})"
+                if stderr:
+                    msg += f": {stderr}"
+                raise BmcError(msg) from e
+            return result.stdout.decode()
+        raise AssertionError("unreachable")
 
     def raw_command(self, netfn: int, command: int, data: bytes = b"") -> bytes:
         """Send a raw IPMI command and return the response data."""

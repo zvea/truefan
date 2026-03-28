@@ -1,7 +1,8 @@
 """Tests for truefan.bmc."""
 
+import logging
 import subprocess
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -211,3 +212,72 @@ class TestRunErrorMessage:
         conn = IpmitoolConnection()
         with pytest.raises(BmcError, match=r"Unable to send RAW command"):
             conn.raw_command(0x30, 0x45)
+
+
+# ---------------------------------------------------------------------------
+# #### IpmitoolConnection._run retry behaviour
+# ---------------------------------------------------------------------------
+
+class TestRunRetry:
+    """Tests for ipmitool command retry on transient failures."""
+
+    @patch("truefan.bmc.time.sleep")
+    @patch("truefan.bmc.subprocess.run")
+    def test_succeeds_first_try(self, mock_run, mock_sleep) -> None:  # noqa: ANN001
+        """No retry or warning when the command succeeds immediately."""
+        mock_run.return_value = _make_result("ok\n")
+        conn = IpmitoolConnection()
+        conn.list_fans()
+        assert mock_run.call_count == 1
+        mock_sleep.assert_not_called()
+
+    @patch("truefan.bmc.time.sleep")
+    @patch("truefan.bmc.subprocess.run")
+    def test_retries_once_then_succeeds(self, mock_run, mock_sleep, caplog) -> None:  # noqa: ANN001
+        """Retries after one failure, returns result, logs one warning."""
+        mock_run.side_effect = [
+            subprocess.CalledProcessError(1, "ipmitool", stderr=b"SDR error"),
+            _make_result(_FAN_CSV),
+        ]
+        conn = IpmitoolConnection()
+        with caplog.at_level(logging.WARNING, logger="truefan.bmc"):
+            fans = conn.list_fans()
+        assert len(fans) == 5
+        assert mock_run.call_count == 2
+        mock_sleep.assert_called_once_with(1)
+        assert sum("attempt 1/3 failed" in r.message for r in caplog.records) == 1
+
+    @patch("truefan.bmc.time.sleep")
+    @patch("truefan.bmc.subprocess.run")
+    def test_retries_twice_then_succeeds(self, mock_run, mock_sleep, caplog) -> None:  # noqa: ANN001
+        """Retries after two failures, returns result, logs two warnings."""
+        mock_run.side_effect = [
+            subprocess.CalledProcessError(1, "ipmitool", stderr=b"SDR error"),
+            subprocess.CalledProcessError(1, "ipmitool", stderr=b"SDR error"),
+            _make_result(_FAN_CSV),
+        ]
+        conn = IpmitoolConnection()
+        with caplog.at_level(logging.WARNING, logger="truefan.bmc"):
+            fans = conn.list_fans()
+        assert len(fans) == 5
+        assert mock_run.call_count == 3
+        assert mock_sleep.call_count == 2
+        assert sum("attempt 1/3 failed" in r.message for r in caplog.records) == 1
+        assert sum("attempt 2/3 failed" in r.message for r in caplog.records) == 1
+
+    @patch("truefan.bmc.time.sleep")
+    @patch("truefan.bmc.subprocess.run")
+    def test_all_attempts_fail(self, mock_run, mock_sleep, caplog) -> None:  # noqa: ANN001
+        """Raises BmcError after three failures, logs only two warnings (not the last)."""
+        mock_run.side_effect = subprocess.CalledProcessError(
+            1, "ipmitool", stderr=b"SDR error",
+        )
+        conn = IpmitoolConnection()
+        with caplog.at_level(logging.WARNING, logger="truefan.bmc"):
+            with pytest.raises(BmcError):
+                conn.list_fans()
+        assert mock_run.call_count == 3
+        assert mock_sleep.call_count == 2
+        warning_count = sum("failed" in r.message for r in caplog.records
+                           if r.levelno == logging.WARNING)
+        assert warning_count == 2
