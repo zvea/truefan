@@ -70,6 +70,18 @@ class TestSmartSensorBackend:
         assert {r.name for r in readings} == {"smart-sda", "smart-sdb", "smart-sdc"}
 
     @patch("truefan.sensors.smart._list_drives")
+    @patch("truefan.sensors.smart.subprocess.run", side_effect=_mock_smartctl_run)
+    def test_names_contain_no_slashes_or_dots(self, mock_run, mock_list) -> None:  # noqa: ANN001
+        """Sensor names must not contain / or . — both break statsd metric paths."""
+        from pathlib import Path
+        mock_list.return_value = [Path("/dev/sda")]
+        backend = SmartSensorBackend()
+        readings = backend.scan()
+        for r in readings:
+            assert "/" not in r.name, f"slash in sensor name: {r.name}"
+            assert "." not in r.name, f"dot in sensor name: {r.name}"
+
+    @patch("truefan.sensors.smart._list_drives")
     @patch("truefan.sensors.smart.subprocess.run")
     def test_skips_drives_without_temp(self, mock_run, mock_list) -> None:  # noqa: ANN001
         """Drives that fail to report temperature are skipped."""
