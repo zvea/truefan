@@ -7,3 +7,4 @@ build/
 experiments/out/
 .coverage
 htmlcov/
+truefan.toml
