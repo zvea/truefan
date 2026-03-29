@@ -20,6 +20,27 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 fail() { printf 'ERROR: %s\n' "$1" >&2; exit 1; }
 warn() { printf 'WARNING: %s\n' "$1" >&2; }
 
+# Check whether a path inside a container lives on a host mount (bind or volume).
+is_persistent() {
+    local container="$1" path="$2"
+    local mounts
+    mounts="$(docker inspect "$container" \
+        --format '{{range .Mounts}}{{.Destination}}{{"\n"}}{{end}}')"
+    while IFS= read -r mountpoint; do
+        [ -z "$mountpoint" ] && continue
+        case "$path" in "$mountpoint"|"$mountpoint"/*) return 0 ;; esac
+    done <<< "$mounts"
+    return 1
+}
+
+warn_if_ephemeral() {
+    local container="$1" path="$2"
+    if ! is_persistent "$container" "$path"; then
+        warn "$path is not on a host mount -- it will be lost when the container is recreated."
+        warn "Consider adding a bind mount for $(dirname "$path")/ in your compose file."
+    fi
+}
+
 usage() {
     printf 'Usage: %s [--container NAME] [--force] child|parent|standalone\n' "$(basename "$0")" >&2
     exit 1
@@ -129,6 +150,7 @@ install_child() {
         echo "statsd config differs -- updating."
     fi
 
+    warn_if_ephemeral "$CONTAINER" "$dest"
     docker cp "$src" "$CONTAINER:$dest"
     echo "Installed $src -> $CONTAINER:$dest"
 }
@@ -154,6 +176,7 @@ install_parent() {
         echo "Alert config differs -- updating."
     fi
 
+    warn_if_ephemeral "$CONTAINER" "$dest"
     docker cp "$src" "$CONTAINER:$dest"
     echo "Installed $src -> $CONTAINER:$dest"
 }
