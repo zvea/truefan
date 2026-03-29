@@ -1,34 +1,104 @@
 #!/usr/bin/env bash
-# Install the TrueFan statsd app config into the Netdata container.
-# Run from the repo root or the netdata/ directory.
+# Install TrueFan Netdata configs into a Docker-based Netdata instance.
+#
+# Usage:
+#   sudo ./install.sh [--container NAME] [--force] child|parent|standalone
+#
+# Targets:
+#   child       statsd app config  (-> /etc/netdata/statsd.d/)
+#   parent      alert definitions  (-> /etc/netdata/health.d/)
+#   standalone  both (single-box setup, no streaming)
+#
+# If --container is omitted, the script auto-detects by looking for
+# a single running container whose name contains "netdata".
 set -euo pipefail
 
-CONTAINER="ix-netdata-netdata-1"
-DEST="/etc/netdata/statsd.d/truefan.conf"
-
-# Locate the config file relative to this script.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SRC="$SCRIPT_DIR/truefan.conf"
 
-# -- Checks ------------------------------------------------------------------
+# -- Helpers ------------------------------------------------------------------
 
 fail() { printf 'ERROR: %s\n' "$1" >&2; exit 1; }
 warn() { printf 'WARNING: %s\n' "$1" >&2; }
 
-if [ "$(id -u)" -ne 0 ]; then
-    fail "Must run as root (docker commands need it on TrueNAS)."
-fi
+usage() {
+    printf 'Usage: %s [--container NAME] [--force] child|parent|standalone\n' "$(basename "$0")" >&2
+    exit 1
+}
+
+# -- Parse args ---------------------------------------------------------------
+
+CONTAINER=""
+TARGET=""
+FORCE=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --container)
+            [ $# -ge 2 ] || usage
+            CONTAINER="$2"
+            shift 2
+            ;;
+        --force|-f)
+            FORCE=1
+            shift
+            ;;
+        child|parent|standalone)
+            [ -z "$TARGET" ] || fail "Target already set to '$TARGET'."
+            TARGET="$1"
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            fail "Unknown argument: $1"
+            ;;
+    esac
+done
+
+[ -n "$TARGET" ] || usage
+
+# -- Checks -------------------------------------------------------------------
 
 if ! command -v docker >/dev/null 2>&1; then
     fail "'docker' not found in PATH."
 fi
 
-if [ ! -f "$SRC" ]; then
-    fail "Source config not found: $SRC"
+if ! docker info >/dev/null 2>&1; then
+    fail "Cannot connect to Docker. Try running with sudo."
 fi
 
+# -- Container detection ------------------------------------------------------
+
+detect_container() {
+    local matches
+    matches="$(docker ps --filter status=running --format '{{.Names}}' | grep -i netdata || true)"
+
+    if [ -z "$matches" ]; then
+        fail "No running container with 'netdata' in its name. Use --container NAME."
+    fi
+
+    local count
+    count="$(printf '%s\n' "$matches" | wc -l)"
+
+    if [ "$count" -gt 1 ]; then
+        printf 'ERROR: Multiple Netdata containers found:\n' >&2
+        printf '  %s\n' $matches >&2
+        printf 'Use --container NAME to pick one.\n' >&2
+        exit 1
+    fi
+
+    printf '%s' "$matches"
+}
+
+if [ -z "$CONTAINER" ]; then
+    CONTAINER="$(detect_container)"
+    echo "Detected container: $CONTAINER"
+fi
+
+# Verify the container is running.
 if ! docker inspect "$CONTAINER" >/dev/null 2>&1; then
-    fail "Container '$CONTAINER' not found. Is the Netdata app running?"
+    fail "Container '$CONTAINER' not found."
 fi
 
 STATE="$(docker inspect -f '{{.State.Status}}' "$CONTAINER")"
@@ -36,51 +106,107 @@ if [ "$STATE" != "running" ]; then
     fail "Container '$CONTAINER' exists but is $STATE, not running."
 fi
 
-# Verify statsd is enabled inside the container.
-if docker exec "$CONTAINER" test -d /etc/netdata/statsd.d 2>/dev/null; then
-    : # good
-else
-    warn "Directory /etc/netdata/statsd.d/ does not exist in the container — creating it."
-    docker exec "$CONTAINER" mkdir -p /etc/netdata/statsd.d
-fi
+# -- Install functions --------------------------------------------------------
 
-# -- Install ------------------------------------------------------------------
+install_child() {
+    local src="$SCRIPT_DIR/child/truefan.conf"
+    local dest="/etc/netdata/statsd.d/truefan.conf"
 
-# Check if already installed and identical.
-if docker exec "$CONTAINER" test -f "$DEST" 2>/dev/null; then
-    EXISTING="$(docker exec "$CONTAINER" cat "$DEST")"
-    NEW="$(cat "$SRC")"
-    if [ "$EXISTING" = "$NEW" ]; then
-        echo "Config is already installed and up to date. Nothing to do."
-        exit 0
+    [ -f "$src" ] || fail "Source config not found: $src"
+
+    if ! docker exec "$CONTAINER" test -d /etc/netdata/statsd.d 2>/dev/null; then
+        warn "Directory /etc/netdata/statsd.d/ does not exist in the container -- creating it."
+        docker exec "$CONTAINER" mkdir -p /etc/netdata/statsd.d
     fi
-    echo "Config exists but differs — updating."
-fi
 
-docker cp "$SRC" "$CONTAINER:$DEST"
-echo "Copied $SRC -> $CONTAINER:$DEST"
+    if [ "$FORCE" -eq 0 ] && docker exec "$CONTAINER" test -f "$dest" 2>/dev/null; then
+        existing="$(docker exec "$CONTAINER" cat "$dest")"
+        new="$(cat "$src")"
+        if [ "$existing" = "$new" ]; then
+            echo "statsd config is already up to date."
+            return 1  # signal: no changes
+        fi
+        echo "statsd config differs -- updating."
+    fi
+
+    docker cp "$src" "$CONTAINER:$dest"
+    echo "Installed $src -> $CONTAINER:$dest"
+}
+
+install_parent() {
+    local src="$SCRIPT_DIR/parent/truefan_alerts.conf"
+    local dest="/etc/netdata/health.d/truefan_alerts.conf"
+
+    [ -f "$src" ] || fail "Source config not found: $src"
+
+    if ! docker exec "$CONTAINER" test -d /etc/netdata/health.d 2>/dev/null; then
+        warn "Directory /etc/netdata/health.d/ does not exist in the container -- creating it."
+        docker exec "$CONTAINER" mkdir -p /etc/netdata/health.d
+    fi
+
+    if [ "$FORCE" -eq 0 ] && docker exec "$CONTAINER" test -f "$dest" 2>/dev/null; then
+        existing="$(docker exec "$CONTAINER" cat "$dest")"
+        new="$(cat "$src")"
+        if [ "$existing" = "$new" ]; then
+            echo "Alert config is already up to date."
+            return 1  # signal: no changes
+        fi
+        echo "Alert config differs -- updating."
+    fi
+
+    docker cp "$src" "$CONTAINER:$dest"
+    echo "Installed $src -> $CONTAINER:$dest"
+}
+
+# -- Run ----------------------------------------------------------------------
+
+changed=0
+
+case "$TARGET" in
+    child)
+        install_child && changed=1 || true
+        ;;
+    parent)
+        install_parent && changed=1 || true
+        ;;
+    standalone)
+        install_child && changed=1 || true
+        install_parent && changed=1 || true
+        ;;
+esac
+
+if [ "$changed" -eq 0 ]; then
+    echo "Everything is already up to date. Nothing to do."
+    exit 0
+fi
 
 # -- Restart ------------------------------------------------------------------
 
 echo "Restarting $CONTAINER..."
 docker restart "$CONTAINER" >/dev/null
-echo "Done. Waiting for Netdata to come back..."
+echo "Waiting for Netdata to come back..."
 
-# Give it a moment, then verify it's healthy.
-for i in 1 2 3 4 5; do
+# Wait for the container process to be running.
+for _ in 1 2 3 4 5; do
     sleep 2
     STATE="$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)"
     if [ "$STATE" = "running" ]; then
         echo "Netdata is running."
-
-        # Verify statsd is listening (hex 1FBD = 8125).
-        if docker exec "$CONTAINER" grep -q ':1FBD ' /proc/net/udp 2>/dev/null; then
-            echo "statsd UDP port 8125 is listening."
-        else
-            warn "statsd UDP port 8125 is not listening. Check the Netdata statsd config."
-        fi
-        exit 0
+        break
     fi
 done
+if [ "$STATE" != "running" ]; then
+    fail "Container did not come back after restart. Check 'docker logs $CONTAINER'."
+fi
 
-fail "Container did not come back after restart. Check 'docker logs $CONTAINER'."
+# Wait for statsd to bind (only relevant for child/standalone).
+if [ "$TARGET" != "parent" ]; then
+    for _ in 1 2 3 4 5 6; do
+        if docker exec "$CONTAINER" grep -q ':1FBD ' /proc/net/udp /proc/net/udp6 2>/dev/null; then
+            echo "statsd UDP port 8125 is listening."
+            exit 0
+        fi
+        sleep 2
+    done
+    warn "statsd UDP port 8125 is not listening after 12s. Check the Netdata statsd config."
+fi

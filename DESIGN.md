@@ -201,7 +201,7 @@ The daemon pushes metrics to Netdata's statsd listener over UDP.
 
 The daemon logs to syslog (`LOG_DAEMON` facility, identifier `truefan`) — fan speed changes, sensor errors, stall events. Visible via `journalctl -t truefan` and `/var/log/syslog`.
 
-To get proper chart names and units in Netdata, install `netdata/truefan.conf` into the Netdata container and restart it. This is only needed on the box running the daemon — streaming parents pick up the charts automatically.
+Config files for Netdata live in `netdata/child/` (statsd app config) and `netdata/parent/` (alert definitions). Install with `sudo ./netdata/install.sh [--container NAME] child|parent|standalone`. In a streaming setup, `child` goes on the box running the daemon and `parent` on the central Netdata instance. For a single-box setup, use `standalone` to install both. The container is auto-detected if exactly one running container has "netdata" in its name.
 
 ### Failsafe
 
