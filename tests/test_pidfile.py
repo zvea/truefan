@@ -98,3 +98,23 @@ class TestPidFileStale:
         with PidFile(pid_path):
             content = pid_path.read_text()
             assert content.strip() == str(os.getpid())
+
+
+# ---------------------------------------------------------------------------
+# #### PidFile (permission errors)
+# ---------------------------------------------------------------------------
+
+class TestPidFilePermission:
+    """Tests for PidFile permission error handling."""
+
+    def test_permission_denied_gives_helpful_message(self, tmp_path: Path) -> None:
+        """PidFileError mentions permission and root when directory is not writable."""
+        readonly_dir = tmp_path / "readonly"
+        readonly_dir.mkdir(mode=0o555)
+        pid_path = readonly_dir / "truefan.pid"
+        try:
+            with pytest.raises(PidFileError, match="permission denied"):
+                with PidFile(pid_path):
+                    pass
+        finally:
+            readonly_dir.chmod(0o755)

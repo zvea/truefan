@@ -68,6 +68,23 @@ def ipmi_device_present() -> bool:
     return any(os.path.exists(p) for p in _IPMI_DEVICE_PATHS)
 
 
+def check_ipmi_access() -> str | None:
+    """Check IPMI device availability and permissions.
+
+    Returns None if accessible, or an error message explaining the problem.
+    """
+    device = None
+    for p in _IPMI_DEVICE_PATHS:
+        if os.path.exists(p):
+            device = p
+            break
+    if device is None:
+        return "No IPMI device found (checked /dev/ipmi0, /dev/ipmi/0, /dev/ipmidev/0)"
+    if not os.access(device, os.R_OK | os.W_OK):
+        return f"Permission denied: {device} (typically requires root)"
+    return None
+
+
 class BmcError(Exception):
     """Raised when IPMI communication fails."""
 

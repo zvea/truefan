@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-from truefan.bmc import BmcConnection
+from truefan.bmc import BmcConnection, check_ipmi_access
 from truefan.config import Config, ConfigError, load_config, validate_config
 from truefan.sensors import available_backends
 
@@ -18,6 +18,11 @@ def load_and_validate(config_path: Path, conn: BmcConnection) -> Config:
         config = load_config(config_path)
     except ConfigError as e:
         print(str(e), file=sys.stderr)
+        sys.exit(1)
+
+    ipmi_error = check_ipmi_access()
+    if ipmi_error is not None:
+        print(ipmi_error, file=sys.stderr)
         sys.exit(1)
 
     backends = available_backends(conn)

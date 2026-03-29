@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from types import MappingProxyType
+from unittest.mock import patch
 
 import pytest
 
@@ -60,7 +61,8 @@ def _make_sim() -> FanSimulator:
 class TestRunRecalibrate:
     """Tests for run_recalibrate."""
 
-    def test_updates_setpoints(self, tmp_path: Path) -> None:
+    @patch("truefan.commands.check_ipmi_access", return_value=None)
+    def test_updates_setpoints(self, mock_ipmi, tmp_path: Path) -> None:  # noqa: ANN001
         """Recalibration replaces placeholder setpoints with real ones."""
         cfg = tmp_path / "truefan.toml"
         _write_initial_config(cfg)
@@ -70,7 +72,8 @@ class TestRunRecalibrate:
         assert config.fans["CPU_FAN1"].setpoints[100] != 9999
         assert len(config.fans["CPU_FAN1"].setpoints) > 2
 
-    def test_preserves_curves(self, tmp_path: Path) -> None:
+    @patch("truefan.commands.check_ipmi_access", return_value=None)
+    def test_preserves_curves(self, mock_ipmi, tmp_path: Path) -> None:  # noqa: ANN001
         """Recalibration preserves user curve overrides."""
         cfg = tmp_path / "truefan.toml"
         _write_initial_config(cfg)
@@ -79,7 +82,8 @@ class TestRunRecalibrate:
         assert SensorClass.CPU in config.curves
         assert config.curves[SensorClass.CPU].temp_low == 35
 
-    def test_preserves_poll_interval(self, tmp_path: Path) -> None:
+    @patch("truefan.commands.check_ipmi_access", return_value=None)
+    def test_preserves_poll_interval(self, mock_ipmi, tmp_path: Path) -> None:  # noqa: ANN001
         """Recalibration preserves poll_interval_seconds."""
         cfg = tmp_path / "truefan.toml"
         _write_initial_config(cfg)

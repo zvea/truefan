@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-from truefan.bmc import BmcConnection, IpmitoolConnection
+from truefan.bmc import BmcConnection, IpmitoolConnection, check_ipmi_access
 from truefan.config import ConfigError, load_config, validate_config
 from truefan.sensors import available_backends
 
@@ -26,6 +26,11 @@ def run_check(
         sys.exit(1)
 
     if not syntax_only:
+        ipmi_error = check_ipmi_access()
+        if ipmi_error is not None:
+            print(ipmi_error, file=sys.stderr)
+            sys.exit(1)
+
         if conn is None:
             conn = IpmitoolConnection()
 

@@ -78,7 +78,10 @@ class TestRunDaemon:
         assert exc_info.value.code == 1
         assert "Malformed TOML" in capsys.readouterr().err
 
-    def test_exits_on_fan_mismatch(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    @patch("truefan.commands.check_ipmi_access", return_value=None)
+    def test_exits_on_fan_mismatch(
+        self, mock_ipmi, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    ) -> None:
         """Fan mismatch prints to stderr and exits before watchdog."""
         cfg = tmp_path / "truefan.toml"
         _write_valid_config(cfg)
@@ -90,8 +93,9 @@ class TestRunDaemon:
         assert exc_info.value.code == 1
         assert "SYS_FAN1" in capsys.readouterr().err
 
+    @patch("truefan.commands.check_ipmi_access", return_value=None)
     @patch("truefan.commands.run._start")
-    def test_valid_config_starts_watchdog(self, mock_start: object, tmp_path: Path) -> None:
+    def test_valid_config_starts_watchdog(self, mock_start: object, mock_ipmi: object, tmp_path: Path) -> None:
         """Valid config + matching hardware proceeds to watchdog."""
         cfg = tmp_path / "truefan.toml"
         _write_valid_config(cfg)

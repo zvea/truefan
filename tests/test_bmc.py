@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from truefan.bmc import BmcError, IpmitoolConnection, ipmi_device_present
+from truefan.bmc import BmcError, IpmitoolConnection, check_ipmi_access, ipmi_device_present
 
 
 _FAN_CSV = (
@@ -54,6 +54,36 @@ class TestIpmiDevicePresent:
     def test_ipmidev0_exists(self, mock_exists) -> None:  # noqa: ANN001
         """Returns True when an alternate device path exists."""
         assert ipmi_device_present() is True
+
+
+# ---------------------------------------------------------------------------
+# #### check_ipmi_access
+# ---------------------------------------------------------------------------
+
+class TestCheckIpmiAccess:
+    """Tests for check_ipmi_access."""
+
+    @patch("truefan.bmc.os.path.exists", return_value=False)
+    def test_no_device(self, mock_exists) -> None:  # noqa: ANN001
+        """Returns error about missing device when none exist."""
+        result = check_ipmi_access()
+        assert result is not None
+        assert "No IPMI device" in result
+
+    @patch("truefan.bmc.os.access", return_value=False)
+    @patch("truefan.bmc.os.path.exists", side_effect=lambda p: p == "/dev/ipmi0")
+    def test_no_permission(self, mock_exists, mock_access) -> None:  # noqa: ANN001
+        """Returns error about permissions when device exists but is not accessible."""
+        result = check_ipmi_access()
+        assert result is not None
+        assert "Permission denied" in result
+        assert "root" in result
+
+    @patch("truefan.bmc.os.access", return_value=True)
+    @patch("truefan.bmc.os.path.exists", side_effect=lambda p: p == "/dev/ipmi0")
+    def test_accessible(self, mock_exists, mock_access) -> None:  # noqa: ANN001
+        """Returns None when device exists and is accessible."""
+        assert check_ipmi_access() is None
 
 
 # ---------------------------------------------------------------------------

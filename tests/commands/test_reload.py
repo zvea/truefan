@@ -71,7 +71,8 @@ class TestRunReload:
         with pytest.raises(SystemExit):
             run_reload(cfg, pid_path)
 
-    def test_sends_sighup(self, tmp_path: Path) -> None:
+    @patch("truefan.commands.check_ipmi_access", return_value=None)
+    def test_sends_sighup(self, mock_ipmi, tmp_path: Path) -> None:  # noqa: ANN001
         """Sends SIGHUP to the PID in the file after validating config."""
         cfg = tmp_path / "truefan.toml"
         _write_valid_config(cfg)
@@ -93,7 +94,8 @@ class TestRunReload:
                     run_reload(cfg, pid_path)
                 mock_kill.assert_not_called()
 
-    def test_process_not_found(self, tmp_path: Path) -> None:
+    @patch("truefan.commands.check_ipmi_access", return_value=None)
+    def test_process_not_found(self, mock_ipmi, tmp_path: Path) -> None:  # noqa: ANN001
         """Exits with error when the PID doesn't correspond to a process."""
         cfg = tmp_path / "truefan.toml"
         _write_valid_config(cfg)
@@ -104,7 +106,8 @@ class TestRunReload:
                 with pytest.raises(SystemExit):
                     run_reload(cfg, pid_path, conn=sim)
 
-    def test_permission_denied(self, tmp_path: Path) -> None:
+    @patch("truefan.commands.check_ipmi_access", return_value=None)
+    def test_permission_denied(self, mock_ipmi, tmp_path: Path) -> None:  # noqa: ANN001
         """Exits with error when we can't signal the process."""
         cfg = tmp_path / "truefan.toml"
         _write_valid_config(cfg)

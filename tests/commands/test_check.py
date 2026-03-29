@@ -5,6 +5,8 @@ from types import MappingProxyType
 
 import pytest
 
+from unittest.mock import patch
+
 from tests.mocks import FanSimulator
 from truefan.bmc import BmcConnection
 from truefan.commands.check import run_check
@@ -54,8 +56,9 @@ def _make_matching_sim() -> FanSimulator:
 class TestRunCheck:
     """Tests for run_check."""
 
+    @patch("truefan.commands.check.check_ipmi_access", return_value=None)
     def test_valid_config_and_hardware(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+        self, mock_ipmi, tmp_path: Path, capsys: pytest.CaptureFixture[str],
     ) -> None:
         """Prints 'Config OK' and exits 0 when everything matches."""
         cfg = tmp_path / "truefan.toml"
@@ -95,8 +98,9 @@ class TestRunCheck:
         assert exc_info.value.code == 1
         assert "fnas" in capsys.readouterr().err
 
+    @patch("truefan.commands.check.check_ipmi_access", return_value=None)
     def test_fan_mismatch(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+        self, mock_ipmi, tmp_path: Path, capsys: pytest.CaptureFixture[str],
     ) -> None:
         """Prints missing fan name and exits 1."""
         cfg = tmp_path / "truefan.toml"

@@ -25,7 +25,9 @@ def main(argv: list[str] | None = None) -> None:
     --config can appear before or after the subcommand name.
     """
     config_parent = argparse.ArgumentParser(add_help=False)
-    config_parent.add_argument("--config", type=Path, default=None, help=_CONFIG_HELP)
+    config_parent.add_argument(
+        "--config", type=Path, default=argparse.SUPPRESS, help=_CONFIG_HELP,
+    )
 
     parser = argparse.ArgumentParser(
         prog="truefan",

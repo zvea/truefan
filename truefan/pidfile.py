@@ -41,7 +41,12 @@ class PidFile:
 
     def __enter__(self) -> "PidFile":
         """Acquire the lock and write the current PID."""
-        self._fd = os.open(str(self._path), os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            self._fd = os.open(str(self._path), os.O_CREAT | os.O_RDWR, 0o644)
+        except PermissionError:
+            raise PidFileError(
+                f"Cannot create {self._path} (permission denied, typically requires root)"
+            )
         try:
             fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
