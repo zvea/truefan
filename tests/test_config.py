@@ -234,6 +234,81 @@ class TestLoadConfig:
         with pytest.raises(ConfigError, match="blah"):
             load_config(cfg)
 
+    def test_fan_missing_zone(self, tmp_path: Path) -> None:
+        """Fan section without zone raises ConfigError naming the fan and key."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text(
+            '[fans.FAN1]\n'
+            'x = 1\n'
+        )
+        with pytest.raises(ConfigError, match=r"\[fans\.FAN1\].*missing.*zone"):
+            load_config(cfg)
+
+    def test_fan_setpoints_only_suggests_typo(self, tmp_path: Path) -> None:
+        """Fan with only setpoints suggests the section header is misspelled."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text(
+            '[fans.FAN1.setpoints]\n'
+            '25 = 320\n'
+            '100 = 1500\n'
+        )
+        with pytest.raises(ConfigError, match=r"misspelled"):
+            load_config(cfg)
+
+    def test_curve_missing_keys(self, tmp_path: Path) -> None:
+        """Curve section with missing keys raises ConfigError naming the curve and keys."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text(
+            '[curves.cpu]\n'
+            'temp_low = 30\n'
+        )
+        with pytest.raises(ConfigError, match=r"\[curves\.cpu\].*missing"):
+            load_config(cfg)
+
+    def test_curve_unknown_key(self, tmp_path: Path) -> None:
+        """Curve section with extra key raises ConfigError naming the key."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text(
+            '[curves.cpu]\n'
+            'temp_low = 30\n'
+            'temp_high = 80\n'
+            'duty_low = 25\n'
+            'duty_high = 100\n'
+            'fan_zones = ["cpu"]\n'
+            'bogus = 42\n'
+        )
+        with pytest.raises(ConfigError, match=r"\[curves\.cpu\].*bogus"):
+            load_config(cfg)
+
+    def test_fan_unknown_key(self, tmp_path: Path) -> None:
+        """Fan section with extra key raises ConfigError naming the key."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text(
+            '[fans.FAN1]\n'
+            'zone = "cpu"\n'
+            'bogus = 42\n'
+        )
+        with pytest.raises(ConfigError, match=r"\[fans\.FAN1\].*bogus"):
+            load_config(cfg)
+
+    def test_sensor_override_unknown_key(self, tmp_path: Path) -> None:
+        """Sensor override with extra key raises ConfigError naming the key."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text(
+            '[curves.other]\n'
+            'temp_low = 30\n'
+            'temp_high = 80\n'
+            'duty_low = 25\n'
+            'duty_high = 100\n'
+            'fan_zones = ["peripheral"]\n'
+            '\n'
+            '[curves.sensor.some_sensor]\n'
+            'temp_low = 60\n'
+            'bogus = 42\n'
+        )
+        with pytest.raises(ConfigError, match=r"\[curves\.sensor\.some_sensor\].*bogus"):
+            load_config(cfg)
+
 
 # ---------------------------------------------------------------------------
 # #### save_config

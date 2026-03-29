@@ -92,17 +92,32 @@ class ConfigError(Exception):
     """Raised when the config file is missing, malformed, or invalid."""
 
 
+_CURVE_REQUIRED_KEYS: frozenset[str] = frozenset({
+    "temp_low", "temp_high", "duty_low", "duty_high", "fan_zones",
+})
+
+
 def _parse_curve(name: str, table: dict) -> tuple[SensorClass, Curve]:
     """Parse a curve section from TOML into a SensorClass and Curve."""
     try:
         sensor_class = SensorClass(name)
     except ValueError:
         raise ConfigError(f"Unknown sensor class: {name!r}")
+    missing = _CURVE_REQUIRED_KEYS - set(table)
+    if missing:
+        raise ConfigError(
+            f"[curves.{name}] missing required keys: {', '.join(sorted(missing))}"
+        )
+    unknown = set(table) - _CURVE_REQUIRED_KEYS
+    if unknown:
+        raise ConfigError(
+            f"[curves.{name}] unrecognized keys: {', '.join(sorted(unknown))}"
+        )
     temp_low = int(table["temp_low"])
     temp_high = int(table["temp_high"])
     if temp_low > temp_high:
         raise ConfigError(
-            f"Curve {name!r}: temp_low ({temp_low}) > temp_high ({temp_high})"
+            f"[curves.{name}]: temp_low ({temp_low}) > temp_high ({temp_high})"
         )
     return sensor_class, Curve(
         temp_low=temp_low,
@@ -113,8 +128,18 @@ def _parse_curve(name: str, table: dict) -> tuple[SensorClass, Curve]:
     )
 
 
-def _parse_sensor_override(table: dict) -> SensorOverride:
+_SENSOR_OVERRIDE_KEYS: frozenset[str] = frozenset({
+    "temp_low", "temp_high", "duty_low", "duty_high", "fan_zones",
+})
+
+
+def _parse_sensor_override(name: str, table: dict) -> SensorOverride:
     """Parse a per-sensor override from TOML."""
+    unknown = set(table) - _SENSOR_OVERRIDE_KEYS
+    if unknown:
+        raise ConfigError(
+            f"[curves.sensor.{name}] unrecognized keys: {', '.join(sorted(unknown))}"
+        )
     return SensorOverride(
         temp_low=int(table["temp_low"]) if "temp_low" in table else None,
         temp_high=int(table["temp_high"]) if "temp_high" in table else None,
@@ -124,8 +149,23 @@ def _parse_sensor_override(table: dict) -> SensorOverride:
     )
 
 
+_FAN_KNOWN_KEYS: frozenset[str] = frozenset({"zone", "setpoints"})
+
+
 def _parse_fan(name: str, table: dict) -> FanConfig:
     """Parse a fan section from TOML into a FanConfig."""
+    if "zone" not in table:
+        if set(table) == {"setpoints"}:
+            raise ConfigError(
+                f"[fans.{name}] has setpoints but no zone "
+                f"(is the [fans.{name}] section header missing or misspelled?)"
+            )
+        raise ConfigError(f"[fans.{name}] missing required key: zone")
+    unknown = set(table) - _FAN_KNOWN_KEYS
+    if unknown:
+        raise ConfigError(
+            f"[fans.{name}] unrecognized keys: {', '.join(sorted(unknown))}"
+        )
     setpoints_raw = table.get("setpoints", {})
     setpoints = {int(k): int(v) for k, v in setpoints_raw.items()}
     return FanConfig(
@@ -146,8 +186,16 @@ def load_config(path: Path) -> Config:
 
     try:
         doc = tomlkit.parse(text)
-    except tomlkit.exceptions.ParseError as e:
-        raise ConfigError(f"Malformed TOML in {path}: {e}")
+    except tomlkit.exceptions.TOMLKitError as e:
+        lines = text.splitlines()
+        context = ""
+        line_no = getattr(e, "line", 0)
+        col = getattr(e, "col", 0)
+        if isinstance(line_no, int) and 1 <= line_no <= len(lines):
+            line_text = lines[line_no - 1]
+            pointer = " " * (col - 1) + "^" if isinstance(col, int) and col >= 1 else ""
+            context = f"\n  {line_text}\n  {pointer}"
+        raise ConfigError(f"Malformed TOML in {path}: {e}{context}")
 
     _KNOWN_KEYS: set[str] = {
         "poll_interval_seconds", "spindown_window_seconds", "curves", "fans",
@@ -166,7 +214,7 @@ def load_config(path: Path) -> Config:
     for name, table in doc.get("curves", {}).items():
         if name == "sensor":
             for sensor_name, override_table in table.items():
-                sensor_overrides[sensor_name] = _parse_sensor_override(override_table)
+                sensor_overrides[sensor_name] = _parse_sensor_override(sensor_name, override_table)
         else:
             sensor_class, curve = _parse_curve(name, table)
             curves[sensor_class] = curve
