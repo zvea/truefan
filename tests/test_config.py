@@ -5,6 +5,7 @@ from types import MappingProxyType
 
 import pytest
 
+from tests.mocks import FanSimulator
 from truefan.config import (
     DEFAULT_CURVES,
     DEFAULT_POLL_INTERVAL_SECONDS,
@@ -14,8 +15,9 @@ from truefan.config import (
     FanConfig,
     load_config,
     save_config,
+    validate_config,
 )
-from truefan.sensors import SensorClass
+from truefan.sensors import SensorClass, SensorReading
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +201,37 @@ class TestLoadConfig:
             '100 = 1500\n'
         )
         with pytest.raises(ConfigError):
+            load_config(cfg)
+
+    def test_unrecognized_top_level_section(self, tmp_path: Path) -> None:
+        """Unrecognized top-level section raises ConfigError."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text(
+            'poll_interval_seconds = 5\n'
+            '\n'
+            '[fnas.FAN1]\n'
+            'zone = "cpu"\n'
+            '\n'
+            '[fnas.FAN1.setpoints]\n'
+            '25 = 320\n'
+            '100 = 1500\n'
+        )
+        with pytest.raises(ConfigError, match="fnas"):
+            load_config(cfg)
+
+    def test_multiple_unrecognized_sections(self, tmp_path: Path) -> None:
+        """All unrecognized sections are named in the error."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text(
+            'poll_interval_seconds = 5\n'
+            '\n'
+            '[blah]\n'
+            'x = 1\n'
+            '\n'
+            '[stuff]\n'
+            'y = 2\n'
+        )
+        with pytest.raises(ConfigError, match="blah"):
             load_config(cfg)
 
 
@@ -394,3 +427,142 @@ class TestSaveConfig:
         reloaded = load_config(cfg_path)
         assert SensorClass.CPU in reloaded.curves
         assert SensorClass.DRIVE not in reloaded.curves
+
+
+# ---------------------------------------------------------------------------
+# #### validate_config
+# ---------------------------------------------------------------------------
+
+
+def _make_config(
+    fans: dict[str, FanConfig] | None = None,
+    sensor_overrides: dict[str, "SensorOverride"] | None = None,
+) -> Config:
+    """Build a Config with sensible defaults for validation tests."""
+    if fans is None:
+        fans = {
+            "CPU_FAN1": FanConfig(
+                zone="cpu",
+                setpoints=MappingProxyType({30: 450, 100: 1500}),
+            ),
+            "SYS_FAN1": FanConfig(
+                zone="peripheral",
+                setpoints=MappingProxyType({20: 240, 100: 1200}),
+            ),
+        }
+    return Config(
+        poll_interval_seconds=5,
+        curves=MappingProxyType({
+            SensorClass.CPU: Curve(
+                temp_low=30, temp_high=80, duty_low=20, duty_high=100,
+                fan_zones=frozenset({"cpu", "peripheral"}),
+            ),
+        }),
+        fans=MappingProxyType(fans),
+        sensor_overrides=MappingProxyType(sensor_overrides or {}),
+    )
+
+
+def _make_sim_for_fans(
+    fan_names: dict[str, str],
+) -> FanSimulator:
+    """Create a FanSimulator with the given {name: zone} fans."""
+    sim = FanSimulator(fans={
+        name: {"max_rpm": 1500} for name in fan_names
+    })
+    for name, zone in fan_names.items():
+        sim.set_fan_zone(name, zone)
+    return sim
+
+
+class TestValidateConfig:
+    """Tests for validate_config."""
+
+    def test_all_fans_match(self) -> None:
+        """No errors when config fans match hardware exactly."""
+        config = _make_config()
+        sim = _make_sim_for_fans({"CPU_FAN1": "cpu", "SYS_FAN1": "peripheral"})
+        readings = [
+            SensorReading(name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0),
+        ]
+        errors = validate_config(config, sim, readings)
+        assert errors == []
+
+    def test_config_fan_not_in_hardware(self) -> None:
+        """Error when config has a fan that hardware doesn't."""
+        config = _make_config()
+        sim = _make_sim_for_fans({"CPU_FAN1": "cpu"})
+        errors = validate_config(config, sim, [])
+        assert any("SYS_FAN1" in e for e in errors)
+
+    def test_hardware_fan_not_in_config(self) -> None:
+        """Error when hardware has a fan that config doesn't."""
+        config = _make_config(fans={
+            "CPU_FAN1": FanConfig(
+                zone="cpu",
+                setpoints=MappingProxyType({30: 450, 100: 1500}),
+            ),
+        })
+        sim = _make_sim_for_fans({"CPU_FAN1": "cpu", "SYS_FAN1": "peripheral"})
+        errors = validate_config(config, sim, [])
+        assert any("SYS_FAN1" in e for e in errors)
+
+    def test_zone_mismatch(self) -> None:
+        """Error when config and hardware disagree on a fan's zone."""
+        config = _make_config(fans={
+            "CPU_FAN1": FanConfig(
+                zone="peripheral",
+                setpoints=MappingProxyType({30: 450, 100: 1500}),
+            ),
+            "SYS_FAN1": FanConfig(
+                zone="peripheral",
+                setpoints=MappingProxyType({20: 240, 100: 1200}),
+            ),
+        })
+        sim = _make_sim_for_fans({"CPU_FAN1": "cpu", "SYS_FAN1": "peripheral"})
+        errors = validate_config(config, sim, [])
+        assert any("CPU_FAN1" in e and "cpu" in e and "peripheral" in e for e in errors)
+
+    def test_multiple_errors(self) -> None:
+        """All mismatches reported, not just the first."""
+        config = _make_config(fans={
+            "CPU_FAN1": FanConfig(
+                zone="peripheral",
+                setpoints=MappingProxyType({30: 450, 100: 1500}),
+            ),
+        })
+        # CPU_FAN1 zone mismatch + SYS_FAN2 in hardware but not config
+        # + SYS_FAN1 in config... wait, SYS_FAN1 is not in this config.
+        # Let me use: config has CPU_FAN1 (wrong zone), hardware has CPU_FAN1 + SYS_FAN2.
+        sim = _make_sim_for_fans({"CPU_FAN1": "cpu", "SYS_FAN2": "peripheral"})
+        errors = validate_config(config, sim, [])
+        # zone mismatch on CPU_FAN1, SYS_FAN1 missing from hardware, SYS_FAN2 not in config
+        assert len(errors) >= 2
+
+    def test_sensor_override_unknown_sensor(self) -> None:
+        """Error when sensor override references a sensor not in readings."""
+        from truefan.config import SensorOverride
+
+        config = _make_config(sensor_overrides={
+            "nonexistent_sensor": SensorOverride(temp_low=50),
+        })
+        sim = _make_sim_for_fans({"CPU_FAN1": "cpu", "SYS_FAN1": "peripheral"})
+        readings = [
+            SensorReading(name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0),
+        ]
+        errors = validate_config(config, sim, readings)
+        assert any("nonexistent_sensor" in e for e in errors)
+
+    def test_sensor_override_valid(self) -> None:
+        """No error when sensor override references a real sensor."""
+        from truefan.config import SensorOverride
+
+        config = _make_config(sensor_overrides={
+            "ipmi_CPU_Temp": SensorOverride(temp_low=50),
+        })
+        sim = _make_sim_for_fans({"CPU_FAN1": "cpu", "SYS_FAN1": "peripheral"})
+        readings = [
+            SensorReading(name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0),
+        ]
+        errors = validate_config(config, sim, readings)
+        assert errors == []

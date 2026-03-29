@@ -8,7 +8,8 @@ from typing import Callable
 
 from truefan.bmc import BmcConnection, IpmitoolConnection
 from truefan.calibrate import calibrate_fans
-from truefan.config import DEFAULT_CURVES, Config, Curve, FanConfig, load_config, save_config
+from truefan.commands import load_and_validate
+from truefan.config import DEFAULT_CURVES, Config, Curve, FanConfig, save_config
 from truefan.fans import detect_fans, reset_thresholds
 from truefan.sensors import SensorClass, available_backends
 from truefan.pidfile import PidFile, PidFileError
@@ -45,7 +46,7 @@ def _do_recalibrate(
     sleep: Callable[[float], None],
 ) -> None:
     """Core recalibration logic, called while holding the PID lock."""
-    config = load_config(config_path)
+    config = load_and_validate(config_path, conn)
 
     print("Detecting fans...")
     fan_zones = detect_fans(conn)

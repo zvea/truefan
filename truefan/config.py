@@ -1,13 +1,19 @@
 """Configuration loading, saving, and data structures."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import tomlkit
 
 from truefan.sensors import SensorClass
+
+if TYPE_CHECKING:
+    from truefan.bmc import BmcConnection
+    from truefan.sensors import SensorReading
 
 DEFAULT_CONFIG_FILENAME: Final[str] = "truefan.toml"
 
@@ -143,6 +149,15 @@ def load_config(path: Path) -> Config:
     except tomlkit.exceptions.ParseError as e:
         raise ConfigError(f"Malformed TOML in {path}: {e}")
 
+    _KNOWN_KEYS: set[str] = {
+        "poll_interval_seconds", "spindown_window_seconds", "curves", "fans",
+    }
+    unknown = sorted(k for k in doc if k not in _KNOWN_KEYS)
+    if unknown:
+        raise ConfigError(
+            f"Unrecognized config keys: {', '.join(unknown)}"
+        )
+
     poll_interval = int(doc.get("poll_interval_seconds", DEFAULT_POLL_INTERVAL_SECONDS))
     spindown_window = int(doc.get("spindown_window_seconds", DEFAULT_SPINDOWN_WINDOW_SECONDS))
 
@@ -229,3 +244,44 @@ def save_config(path: Path, config: Config) -> None:
             del fans_in_doc[name]
 
     path.write_text(tomlkit.dumps(doc))
+
+
+def validate_config(
+    config: Config,
+    conn: BmcConnection,
+    readings: list[SensorReading],
+) -> list[str]:
+    """Check config against live hardware state.
+
+    Returns a list of error messages. Empty means valid.
+    Checks fan set membership, zone agreement, and sensor override targets.
+    """
+    from truefan.fans import detect_fans
+
+    errors: list[str] = []
+
+    # Fan checks: config fans vs hardware fans.
+    hw_fans = detect_fans(conn)
+    config_names = set(config.fans)
+    hw_names = set(hw_fans)
+
+    for name in sorted(config_names - hw_names):
+        errors.append(f"Fan {name} is in config but not detected in hardware")
+    for name in sorted(hw_names - config_names):
+        errors.append(f"Fan {name} is detected in hardware but not in config")
+    for name in sorted(config_names & hw_names):
+        config_zone = config.fans[name].zone
+        hw_zone = hw_fans[name]
+        if config_zone != hw_zone:
+            errors.append(
+                f"Fan {name} zone mismatch: config says {config_zone!r}, "
+                f"hardware says {hw_zone!r}"
+            )
+
+    # Sensor override checks.
+    if config.sensor_overrides:
+        known_sensors = {r.name for r in readings}
+        for name in sorted(set(config.sensor_overrides) - known_sensors):
+            errors.append(f"Sensor override references unknown sensor: {name}")
+
+    return errors

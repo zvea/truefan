@@ -5,11 +5,20 @@ import signal
 import sys
 from pathlib import Path
 
+from truefan.bmc import BmcConnection, IpmitoolConnection
+from truefan.commands import load_and_validate
 from truefan.pidfile import is_locked
 
 
-def run_reload(pid_path: Path) -> None:
-    """Send SIGHUP to the running daemon to reload its config."""
+def run_reload(
+    config_path: Path,
+    pid_path: Path,
+    conn: BmcConnection | None = None,
+) -> None:
+    """Validate config, then send SIGHUP to the running daemon.
+
+    Refuses to reload if the config is broken or doesn't match hardware.
+    """
     if not pid_path.exists():
         print(f"No daemon is running ({pid_path} not found).", file=sys.stderr)
         sys.exit(1)
@@ -17,6 +26,11 @@ def run_reload(pid_path: Path) -> None:
     if not is_locked(pid_path):
         print(f"No daemon is running ({pid_path} is stale).", file=sys.stderr)
         sys.exit(1)
+
+    if conn is None:
+        conn = IpmitoolConnection()
+
+    load_and_validate(config_path, conn)
 
     pid = int(pid_path.read_text().strip())
     try:

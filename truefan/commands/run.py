@@ -5,12 +5,22 @@ import sys
 from pathlib import Path
 
 from truefan.bmc import BmcConnection, IpmitoolConnection
+from truefan.commands import load_and_validate
 from truefan.daemon import run as daemon_run
 from truefan.pidfile import PidFile, PidFileError
 
 
-def run_daemon(config_path: Path, pid_path: Path | None = None) -> None:
-    """Acquire the PID lock and start the watchdog + daemon."""
+def run_daemon(
+    config_path: Path,
+    pid_path: Path | None = None,
+    conn: BmcConnection | None = None,
+) -> None:
+    """Validate config, acquire the PID lock, and start the daemon.
+
+    Checks config exists, acquires the PID lock, validates the config
+    against live hardware, then starts the watchdog. Prints errors to
+    stderr and exits if any step fails.
+    """
     if not config_path.exists():
         print(
             f"Config not found: {config_path}\n"
@@ -19,16 +29,19 @@ def run_daemon(config_path: Path, pid_path: Path | None = None) -> None:
         )
         sys.exit(1)
 
-    conn = IpmitoolConnection()
+    if conn is None:
+        conn = IpmitoolConnection()
 
     if pid_path is not None:
         try:
             with PidFile(pid_path):
+                load_and_validate(config_path, conn)
                 _start(config_path, conn)
         except PidFileError as e:
             print(str(e), file=sys.stderr)
             sys.exit(1)
     else:
+        load_and_validate(config_path, conn)
         _start(config_path, conn)
 
 

@@ -12,7 +12,7 @@ from typing import Callable
 
 from truefan.bmc import BmcConnection, IpmitoolConnection
 from truefan.calibrate import remove_lowest_setpoint
-from truefan.config import Config, ConfigError, FanConfig, load_config, save_config
+from truefan.config import Config, FanConfig, load_config, save_config
 from truefan.control import ZoneDuty, compute_thermal_load, compute_zone_duties
 from truefan.fans import (
     FanRpm,
@@ -148,16 +148,6 @@ def run(
     enable_manual_control(conn)
 
     backends = available_backends(conn)
-
-    # Validate sensor overrides against detected sensors.
-    if config.sensor_overrides:
-        initial_readings = _read_all_sensors(backends)
-        known_sensors = {r.name for r in initial_readings}
-        unknown = set(config.sensor_overrides) - known_sensors
-        if unknown:
-            raise ConfigError(
-                f"Sensor overrides reference unknown sensors: {', '.join(sorted(unknown))}"
-            )
 
     prev_zone_duties: dict[str, int] = {}
     # Sliding window of (timestamp, duty) per zone for conservative spindown.

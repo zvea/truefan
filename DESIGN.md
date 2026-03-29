@@ -83,6 +83,21 @@ During normal operation, if a fan stalls above its lowest setpoint, the daemon k
 
 Single TOML file via `tomlkit` — comments and formatting survive reads and writes. Has both user settings and daemon-managed state (setpoints, which you can also edit by hand). The daemon reloads the config on SIGHUP.
 
+#### Startup validation
+
+`truefan run`, `truefan recalibrate`, and `truefan reload` validate the config before doing real work. If any check fails, errors are printed to stderr and the process exits — no fans are touched, no signals sent.
+
+Parsing checks:
+
+- Missing or malformed TOML.
+- Unrecognized top-level config keys (catches typos like `[fnas]` instead of `[fans]`).
+- Invalid values (unknown sensor class, temp_low > temp_high).
+
+Hardware checks:
+
+- **Fan mismatch.** The set of fans in the config must exactly match the set of active fans detected via IPMI. Fans in the config but missing from hardware, fans present in hardware but missing from the config, and zone disagreements are all errors.
+- **Sensor override targets.** Every sensor named in a `[curves.sensor.*]` override must exist in the current sensor readings.
+
 ```toml
 # Send SIGHUP to the daemon to reload this file.
 poll_interval_seconds = 15
@@ -142,12 +157,12 @@ truefan/
     __init__.py
     main.py          # entry point, argument parsing
     commands/
-        __init__.py
+        __init__.py  # shared config validation
         init.py      # detect fans, calibrate, generate config
         run.py       # start the daemon
         recalibrate.py # re-run fan calibration
         sensors.py   # show all detected sensors
-        reload.py    # send SIGHUP to running daemon
+        reload.py    # validate config, then send SIGHUP to running daemon
     watchdog.py      # parent process — spawn, monitor, failsafe
     daemon.py        # main poll loop
     config.py        # load/save TOML, config dataclasses
@@ -194,6 +209,6 @@ To get proper chart names and units in Netdata, install `netdata/truefan.conf` i
 - **`truefan run [--config PATH]`** — start the daemon (wrapped by the watchdog). Refuses if no config exists, pointing you to `truefan init`.
 - **`truefan recalibrate [--config PATH]`** — re-run calibration on an existing config. Rebuilds setpoint tables in place and exits.
 - **`truefan sensors`** — show all detected temperature and fan RPM sensors with current readings, classifications, and hardware thresholds. Useful for verifying what the daemon sees before running it.
-- **`truefan reload`** — send SIGHUP to the running daemon to reload its config. Errors if no daemon is running.
+- **`truefan reload`** — validate the config against live hardware, then send SIGHUP to the running daemon. Refuses to reload if the config is broken or doesn't match hardware.
 
 Default config path: `truefan.toml` next to the script. `--config` overrides.

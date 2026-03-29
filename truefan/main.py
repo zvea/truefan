@@ -71,7 +71,7 @@ def _dispatch(args: argparse.Namespace) -> None:
         run_sensors()
     elif args.command == "reload":
         from truefan.commands.reload import run_reload
-        run_reload(PID_PATH)
+        run_reload(args.config, PID_PATH)
 
 
 if __name__ == "__main__":
