@@ -193,7 +193,7 @@ The daemon pushes metrics to Netdata's statsd listener over UDP.
 | `truefan.zone.<name>.duty` | gauge | Current duty cycle % for each fan zone. |
 | `truefan.daemon.restarts` | counter | Incremented by the watchdog each time the daemon crashes and is restarted. |
 
-The daemon also logs to stderr — fan speed changes, sensor errors, stall events.
+The daemon logs to syslog (`LOG_DAEMON` facility, identifier `truefan`) — fan speed changes, sensor errors, stall events. Visible via `journalctl -t truefan` and `/var/log/syslog`.
 
 To get proper chart names and units in Netdata, install `netdata/truefan.conf` into the Netdata container and restart it. This is only needed on the box running the daemon — streaming parents pick up the charts automatically.
 

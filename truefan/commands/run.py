@@ -2,6 +2,7 @@
 
 import logging
 import sys
+from logging.handlers import SysLogHandler
 from pathlib import Path
 
 from truefan.bmc import BmcConnection, IpmitoolConnection
@@ -47,11 +48,12 @@ def run_daemon(
 
 def _start(config_path: Path, conn: BmcConnection) -> None:
     """Start the watchdog which supervises the daemon."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        stream=sys.stderr,
-    )
+    handler = SysLogHandler(address="/dev/log", facility=SysLogHandler.LOG_DAEMON)
+    handler.ident = "truefan: "
+    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(handler)
 
     from truefan.watchdog import start
 

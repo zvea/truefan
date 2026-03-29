@@ -1,5 +1,7 @@
 """Tests for truefan.commands.run."""
 
+import logging
+from logging.handlers import SysLogHandler
 from pathlib import Path
 from types import MappingProxyType
 from unittest.mock import patch
@@ -7,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from tests.mocks import FanSimulator
-from truefan.commands.run import run_daemon
+from truefan.commands.run import _start, run_daemon
 from truefan.config import Config, Curve, FanConfig, save_config
 from truefan.pidfile import PidFile
 from truefan.sensors import SensorClass
@@ -102,3 +104,28 @@ class TestRunDaemon:
         sim = _make_matching_sim()
         run_daemon(cfg, conn=sim)
         mock_start.assert_called_once()  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# #### _start
+# ---------------------------------------------------------------------------
+
+class TestStart:
+    """Tests for _start (logging configuration)."""
+
+    @patch("truefan.watchdog.start")
+    def test_configures_syslog_handler(self, mock_watchdog_start: object, tmp_path: Path) -> None:
+        """_start installs a SysLogHandler with LOG_DAEMON facility."""
+        sim = _make_matching_sim()
+        root = logging.getLogger()
+        handlers_before = list(root.handlers)
+        try:
+            _start(tmp_path / "truefan.toml", sim)
+            added = [h for h in root.handlers if h not in handlers_before]
+            assert any(isinstance(h, SysLogHandler) for h in added)
+            syslog_handler = next(h for h in added if isinstance(h, SysLogHandler))
+            assert syslog_handler.facility == SysLogHandler.LOG_DAEMON
+        finally:
+            for h in root.handlers:
+                if h not in handlers_before:
+                    root.removeHandler(h)
