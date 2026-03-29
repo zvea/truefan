@@ -16,10 +16,10 @@ if TYPE_CHECKING:
     from truefan.bmc import BmcConnection
     from truefan.sensors import SensorReading
 
-DEFAULT_CONFIG_FILENAME: Final[str] = "truefan.toml"
+DEFAULT_CONFIG_FILENAME: Final = "truefan.toml"
 
-DEFAULT_POLL_INTERVAL_SECONDS: Final[int] = 15
-DEFAULT_SPINDOWN_WINDOW_SECONDS: Final[int] = 180
+DEFAULT_POLL_INTERVAL_SECONDS: Final = 15
+DEFAULT_SPINDOWN_WINDOW_SECONDS: Final = 180
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -35,7 +35,7 @@ class Curve:
     fan_zones: frozenset[str]
 
 
-DEFAULT_CURVES: Final[MappingProxyType[SensorClass, Curve]] = MappingProxyType({
+DEFAULT_CURVES: Final = MappingProxyType({
     SensorClass.CPU: Curve(
         no_cooling_temp=35, max_cooling_temp=80,
         fan_zones=frozenset({"cpu", "peripheral"}),
@@ -101,7 +101,7 @@ def _parse_int(section: str, key: str, value: object) -> int:
         raise ConfigError(f"{section} {key} must be an integer, got {value!r}")
 
 
-_CURVE_REQUIRED_KEYS: Final[frozenset[str]] = frozenset({
+_CURVE_REQUIRED_KEYS: Final = frozenset({
     "no_cooling_temp", "max_cooling_temp", "fan_zones",
 })
 
@@ -141,7 +141,7 @@ def _parse_curve(name: str, table: dict) -> tuple[SensorClass, Curve]:
     )
 
 
-_SENSOR_OVERRIDE_KEYS: Final[frozenset[str]] = frozenset({
+_SENSOR_OVERRIDE_KEYS: Final = frozenset({
     "no_cooling_temp", "max_cooling_temp", "fan_zones",
 })
 

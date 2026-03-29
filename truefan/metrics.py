@@ -4,8 +4,8 @@ import logging
 import socket
 from typing import Final
 
-DEFAULT_STATSD_HOST: Final[str] = "127.0.0.1"
-DEFAULT_STATSD_PORT: Final[int] = 8125
+DEFAULT_STATSD_HOST: Final = "127.0.0.1"
+DEFAULT_STATSD_PORT: Final = 8125
 
 _log: logging.Logger = logging.getLogger(__name__)
 

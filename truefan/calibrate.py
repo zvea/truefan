@@ -10,12 +10,12 @@ from truefan.bmc import BmcConnection
 from truefan.config import FanConfig
 from truefan.fans import read_fan_rpms, set_full_speed, set_zone_duty
 
-SETTLE_SECONDS: Final[float] = 10.0
+SETTLE_SECONDS: Final = 10.0
 
-DUTY_TEST_POINTS: Final[tuple[int, ...]] = (100, 90, 80, 70, 60, 50, 40, 30, 20, 10)
+DUTY_TEST_POINTS: Final = (100, 90, 80, 70, 60, 50, 40, 30, 20, 10)
 
-_TEMP_CRIT_MARGIN: Final[float] = 10.0
-_TEMP_DEFAULT_ABORT: Final[float] = 80.0
+_TEMP_CRIT_MARGIN: Final = 10.0
+_TEMP_DEFAULT_ABORT: Final = 80.0
 
 
 @dataclass(frozen=True, kw_only=True)

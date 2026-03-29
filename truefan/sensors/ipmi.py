@@ -12,7 +12,7 @@ _NAME_TO_CLASS: Final = MappingProxyType({
     "Peripheral Temp": SensorClass.AMBIENT,
 })
 
-_NVME_PREFIXES: Final[tuple[str, ...]] = ("M2NVMeSSD", "U2NVMeSSD")
+_NVME_PREFIXES: Final = ("M2NVMeSSD", "U2NVMeSSD")
 
 
 def _classify(name: str) -> SensorClass:

@@ -6,7 +6,7 @@ from typing import Final
 
 from truefan.bmc import BmcConnection
 
-ZONES: Final[frozenset[str]] = frozenset({"cpu", "peripheral"})
+ZONES: Final = frozenset({"cpu", "peripheral"})
 
 _ZONE_IDS: Final = MappingProxyType({"cpu": 0x00, "peripheral": 0x01})
 
@@ -15,8 +15,8 @@ _FAN_PREFIX_TO_ZONE: Final = MappingProxyType({
     "SYS_": "peripheral",
 })
 
-_THRESHOLD_LOWER: Final[tuple[int, int, int]] = (100, 100, 100)
-_THRESHOLD_UPPER: Final[tuple[int, int, int]] = (25000, 25000, 25000)
+_THRESHOLD_LOWER: Final = (100, 100, 100)
+_THRESHOLD_UPPER: Final = (25000, 25000, 25000)
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Final
 
-PID_PATH: Final[Path] = Path("/var/run/truefan.pid")
+PID_PATH: Final = Path("/var/run/truefan.pid")
 
 
 class PidFileError(Exception):

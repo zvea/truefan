@@ -16,9 +16,9 @@ from typing import Final
 
 _log: logging.Logger = logging.getLogger(__name__)
 
-_IPMITOOL: Final[str] = "/usr/bin/ipmitool"
-_MAX_ATTEMPTS: Final[int] = 3
-_RETRY_DELAY_SECONDS: Final[float] = 1.0
+_IPMITOOL: Final = "/usr/bin/ipmitool"
+_MAX_ATTEMPTS: Final = 3
+_RETRY_DELAY_SECONDS: Final = 1.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -56,7 +56,7 @@ class BmcConnection(ABC):
         """List all temperature sensors with optional thresholds."""
 
 
-_IPMI_DEVICE_PATHS: Final[tuple[str, ...]] = (
+_IPMI_DEVICE_PATHS: Final = (
     "/dev/ipmi0",
     "/dev/ipmi/0",
     "/dev/ipmidev/0",

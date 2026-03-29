@@ -15,7 +15,7 @@ from truefan.metrics import send_daemon_restart
 
 _log: logging.Logger = logging.getLogger(__name__)
 
-_PR_SET_PDEATHSIG: Final[int] = 1
+_PR_SET_PDEATHSIG: Final = 1
 _libc = ctypes.CDLL("libc.so.6", use_errno=True)
 
 

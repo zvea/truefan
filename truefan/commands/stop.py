@@ -9,7 +9,7 @@ from typing import Final
 
 from truefan.pidfile import is_locked
 
-_POLL_INTERVAL: Final[float] = 0.1
+_POLL_INTERVAL: Final = 0.1
 
 
 def run_stop(pid_path: Path, timeout: float = 5.0) -> None:
