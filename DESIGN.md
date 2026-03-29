@@ -164,6 +164,7 @@ truefan/
         recalibrate.py # re-run fan calibration
         sensors.py   # show all detected sensors
         reload.py    # validate config, then send SIGHUP to running daemon
+        logs.py      # show daemon logs via journalctl
     watchdog.py      # parent process — spawn, monitor, failsafe
     daemon.py        # main poll loop
     config.py        # load/save TOML, config dataclasses
@@ -211,6 +212,7 @@ To get proper chart names and units in Netdata, install `netdata/truefan.conf` i
 - **`truefan recalibrate [--config PATH]`** — re-run calibration on an existing config. Rebuilds setpoint tables in place and exits.
 - **`truefan sensors`** — show all detected temperature and fan RPM sensors with current readings, classifications, and hardware thresholds. Useful for verifying what the daemon sees before running it.
 - **`truefan reload`** — validate the config against live hardware, then send SIGHUP to the running daemon. Refuses to reload if the config is broken or doesn't match hardware.
+- **`truefan logs [JOURNALCTL_ARGS...]`** — show daemon logs via `journalctl -t truefan`. All arguments are forwarded verbatim to journalctl (e.g. `truefan logs -f` to follow, `truefan logs -n 50` for last 50 lines). With no extra arguments, shows all available logs.
 - **`truefan check [--syntax-only]`** — validate the config and print the result. With `--syntax-only`, checks only parsing without contacting hardware. Exits 0 on success, 1 on failure.
 
 Default config path: `truefan.toml` next to the script. `--config` overrides.

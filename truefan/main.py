@@ -50,6 +50,7 @@ def main(argv: list[str] | None = None) -> None:
                     parents=[config_parent])
     sub.add_parser("reload", help="Send SIGHUP to the running daemon to reload config",
                     parents=[config_parent])
+    sub.add_parser("logs", help="Show daemon logs (args forwarded to journalctl)")
     # Diagnostics.
     sub.add_parser("sensors", help="Show all detected temperature and fan sensors")
     check_parser = sub.add_parser("check", help="Validate the config file",
@@ -68,7 +69,15 @@ def main(argv: list[str] | None = None) -> None:
         parser.print_help()
         return
 
-    args = parser.parse_args(argv)
+    # "logs" forwards all remaining args to journalctl, so we split before
+    # argparse can reject unknown flags like -f or --no-pager.
+    if "logs" in effective:
+        idx = effective.index("logs")
+        logs_extra = effective[idx + 1:]
+        args = parser.parse_args(effective[:idx] + ["logs"])
+        args.logs_extra = logs_extra
+    else:
+        args = parser.parse_args(argv)
 
     if args.command is None:
         parser.print_help()
@@ -103,6 +112,9 @@ def _dispatch(args: argparse.Namespace) -> None:
     elif args.command == "recalibrate":
         from truefan.commands.recalibrate import run_recalibrate
         run_recalibrate(args.config, pid_path=PID_PATH)
+    elif args.command == "logs":
+        from truefan.commands.logs import run_logs
+        run_logs(args.logs_extra)
     elif args.command == "sensors":
         from truefan.commands.sensors import run_sensors
         run_sensors()
