@@ -29,6 +29,12 @@ def main(argv: list[str] | None = None) -> None:
         "--config", type=Path, default=argparse.SUPPRESS, help=_CONFIG_HELP,
     )
 
+    foreground_parent = argparse.ArgumentParser(add_help=False)
+    foreground_parent.add_argument(
+        "--foreground", action="store_true", default=False,
+        help="Run in the foreground instead of daemonizing",
+    )
+
     parser = argparse.ArgumentParser(
         prog="truefan",
         description="Fan control daemon for TrueNAS SCALE.",
@@ -46,8 +52,11 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("recalibrate", help="Re-run fan calibration on an existing config",
                     parents=[config_parent])
     # Operation.
-    sub.add_parser("run", help="Start the fan control daemon",
-                    parents=[config_parent])
+    sub.add_parser("start", help="Start the fan control daemon",
+                    parents=[config_parent, foreground_parent])
+    sub.add_parser("stop", help="Stop the running daemon")
+    sub.add_parser("restart", help="Stop the running daemon, then start it again",
+                    parents=[config_parent, foreground_parent])
     sub.add_parser("reload", help="Send SIGHUP to the running daemon to reload config",
                     parents=[config_parent])
     sub.add_parser("logs", help="Show daemon logs (args forwarded to journalctl)")
@@ -84,8 +93,11 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     # Resolve --config: use the value from whichever position it was given,
-    # falling back to the default.
-    if args.config is None:
+    # falling back to the default.  Commands that don't take --config
+    # (stop, sensors, logs) won't have the attribute.
+    if hasattr(args, "config") and args.config is None:
+        args.config = _default_config_path()
+    elif not hasattr(args, "config"):
         args.config = _default_config_path()
 
     try:
@@ -106,9 +118,20 @@ def _dispatch(args: argparse.Namespace) -> None:
     if args.command == "init":
         from truefan.commands.init import run_init
         run_init(args.config, pid_path=PID_PATH)
-    elif args.command == "run":
-        from truefan.commands.run import run_daemon
-        run_daemon(args.config, pid_path=PID_PATH)
+    elif args.command == "start":
+        from truefan.commands.start import run_start
+        run_start(args.config, pid_path=PID_PATH, foreground=args.foreground)
+    elif args.command == "stop":
+        from truefan.commands.stop import run_stop
+        run_stop(PID_PATH)
+    elif args.command == "restart":
+        from truefan.commands.stop import run_stop
+        try:
+            run_stop(PID_PATH)
+        except SystemExit:
+            pass  # No daemon running — proceed to start.
+        from truefan.commands.start import run_start
+        run_start(args.config, pid_path=PID_PATH, foreground=args.foreground)
     elif args.command == "recalibrate":
         from truefan.commands.recalibrate import run_recalibrate
         run_recalibrate(args.config, pid_path=PID_PATH)

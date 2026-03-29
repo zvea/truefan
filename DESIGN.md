@@ -23,9 +23,11 @@ TrueFan is a fan control daemon for TrueNAS SCALE systems based on Supermicro X1
 
 ### Process model
 
-A small **watchdog parent** spawns the daemon as a child. If the child dies unexpectedly, the parent sets all fans to 100% and restarts it. On SIGTERM, the parent forwards the signal; the child sets fans to full speed and exits; the parent follows.
+`truefan start` daemonizes via the classic double-fork: fork, `setsid`, fork again, then close stdin/stdout/stderr and redirect to `/dev/null`. The original process prints the daemon PID and exits immediately, returning the shell prompt. `truefan start --foreground` skips the double-fork — the watchdog runs in the foreground with logging to stderr instead of syslog. Useful for debugging and systemd `Type=simple` service files.
 
-A PID file (`/var/run/truefan.pid`) with OS-level `flock` prevents multiple instances. `truefan run` acquires the lock before starting the watchdog; the lock is released automatically on process exit (including `kill -9`). `truefan init` and `truefan recalibrate` acquire the lock for the duration of their work, preventing conflicts with a running daemon or each other. `truefan sensors` is read-only and skips the check.
+After daemonization, a **watchdog parent** spawns the daemon as a child. If the child dies unexpectedly, the parent sets all fans to 100% and restarts it. On SIGTERM, the parent forwards the signal; the child sets fans to full speed and exits; the parent follows.
+
+A PID file (`/var/run/truefan.pid`) with OS-level `flock` prevents multiple instances. The PID file holds the watchdog's PID (the outermost long-lived process after daemonization). `truefan start` acquires the lock after daemonizing; the lock is released automatically on process exit (including `kill -9`). `truefan stop` reads the PID file, verifies the lock is held, sends SIGTERM, and waits for the process to exit. `truefan init` and `truefan recalibrate` acquire the lock for the duration of their work, preventing conflicts with a running daemon or each other. `truefan sensors` is read-only and skips the check.
 
 ### Main loop
 
@@ -85,7 +87,7 @@ Single TOML file via `tomlkit` — comments and formatting survive reads and wri
 
 #### Startup validation
 
-`truefan run`, `truefan recalibrate`, and `truefan reload` validate the config before doing real work. If any check fails, errors are printed to stderr and the process exits — no fans are touched, no signals sent.
+`truefan start`, `truefan recalibrate`, and `truefan reload` validate the config before doing real work. If any check fails, errors are printed to stderr and the process exits — no fans are touched, no signals sent.
 
 Parsing checks:
 
@@ -99,7 +101,7 @@ Hardware checks:
 - **Sensor override targets.** Every sensor named in a `[curves.sensor.*]` override must exist in the current sensor readings.
 
 ```toml
-# Send SIGHUP to the daemon to reload this file.
+# Run `truefan reload` to validate and reload this file.
 poll_interval_seconds = 15
 spindown_window_seconds = 180
 
@@ -160,7 +162,9 @@ truefan/
         __init__.py  # shared config validation
         check.py     # validate config without starting the daemon
         init.py      # detect fans, calibrate, generate config
-        run.py       # start the daemon
+        start.py     # daemonize and start the daemon
+        stop.py      # stop the running daemon
+        # restart is dispatch logic in main.py (stop then start)
         recalibrate.py # re-run fan calibration
         sensors.py   # show all detected sensors
         reload.py    # validate config, then send SIGHUP to running daemon
@@ -208,11 +212,13 @@ To get proper chart names and units in Netdata, install `netdata/truefan.conf` i
 ## CLI
 
 - **`truefan init [--config PATH]`** — detect sensors and fans, run calibration (build setpoint tables), write a config with curves for detected sensor classes and calibrated fan setpoints. Refuses if the config already exists.
-- **`truefan run [--config PATH]`** — start the daemon (wrapped by the watchdog). Refuses if no config exists, pointing you to `truefan init`.
 - **`truefan recalibrate [--config PATH]`** — re-run calibration on an existing config. Rebuilds setpoint tables in place and exits.
+- **`truefan start [--foreground] [--config PATH]`** — daemonize and start the fan control daemon (wrapped by the watchdog). Prints the daemon PID and returns immediately. With `--foreground`, runs in the foreground with logging to stderr instead of syslog. Refuses if no config exists, pointing you to `truefan init`.
+- **`truefan stop`** — stop the running daemon by sending SIGTERM and waiting for it to exit.
+- **`truefan restart [--foreground] [--config PATH]`** — stop the running daemon (if any), then start it again. Equivalent to `truefan stop` followed by `truefan start`.
+- **`truefan reload [--config PATH]`** — validate the config against live hardware, then send SIGHUP to the running daemon. Refuses to reload if the config is broken or doesn't match hardware.
 - **`truefan sensors`** — show all detected temperature and fan RPM sensors with current readings, classifications, and hardware thresholds. Useful for verifying what the daemon sees before running it.
-- **`truefan reload`** — validate the config against live hardware, then send SIGHUP to the running daemon. Refuses to reload if the config is broken or doesn't match hardware.
-- **`truefan logs [JOURNALCTL_ARGS...]`** — show daemon logs via `journalctl -t truefan`. All arguments are forwarded verbatim to journalctl (e.g. `truefan logs -f` to follow, `truefan logs -n 50` for last 50 lines). With no extra arguments, shows all available logs.
 - **`truefan check [--syntax-only]`** — validate the config and print the result. With `--syntax-only`, checks only parsing without contacting hardware. Exits 0 on success, 1 on failure.
+- **`truefan logs [JOURNALCTL_ARGS...]`** — show daemon logs via `journalctl -t truefan`. All arguments are forwarded verbatim to journalctl (e.g. `truefan logs -f` to follow, `truefan logs -n 50` for last 50 lines). With no extra arguments, shows all available logs.
 
 Default config path: `truefan.toml` next to the script. `--config` overrides.

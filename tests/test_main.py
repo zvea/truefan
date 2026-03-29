@@ -1,6 +1,7 @@
 """Tests for truefan.main."""
 
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -63,9 +64,79 @@ class TestHelp:
         """'help' does not appear as a listed subcommand."""
         main(["help"])
         out = capsys.readouterr().out
-        # "help" appears in the -h/--help option but not in the subcommand list.
-        # The subcommand list is in the {init,run,...} line.
         lines = [l for l in out.splitlines() if l.strip().startswith("help")]
-        # Only the -h/--help line should match, not a subcommand entry.
         for line in lines:
             assert "--help" in line or "-h" in line
+
+
+# ---------------------------------------------------------------------------
+# #### subcommand recognition
+# ---------------------------------------------------------------------------
+
+class TestSubcommandRecognition:
+    """Tests for subcommand dispatch."""
+
+    def test_run_is_not_recognized(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """'truefan run' is no longer a valid subcommand."""
+        with pytest.raises(SystemExit):
+            main(["run"])
+
+    @patch("truefan.commands.start.run_start")
+    def test_start_dispatches(self, mock_run_start: MagicMock, tmp_path: Path) -> None:
+        """'truefan start' dispatches to run_start."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text("")
+        main(["start", "--config", str(cfg)])
+        mock_run_start.assert_called_once()
+
+    @patch("truefan.commands.start.run_start")
+    def test_start_foreground_flag(self, mock_run_start: MagicMock, tmp_path: Path) -> None:
+        """'truefan start --foreground' passes foreground=True."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text("")
+        main(["start", "--foreground", "--config", str(cfg)])
+        _, kwargs = mock_run_start.call_args
+        assert kwargs.get("foreground") is True
+
+    @patch("truefan.commands.stop.run_stop")
+    def test_stop_dispatches(self, mock_run_stop: MagicMock) -> None:
+        """'truefan stop' dispatches to run_stop."""
+        main(["stop"])
+        mock_run_stop.assert_called_once()
+
+    @patch("truefan.commands.start.run_start")
+    @patch("truefan.commands.stop.run_stop")
+    def test_restart_calls_stop_then_start(
+        self, mock_run_stop: MagicMock, mock_run_start: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """'truefan restart' calls stop (tolerating not running) then start."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text("")
+        main(["restart", "--config", str(cfg)])
+        mock_run_stop.assert_called_once()
+        mock_run_start.assert_called_once()
+
+    @patch("truefan.commands.start.run_start")
+    @patch("truefan.commands.stop.run_stop", side_effect=SystemExit(1))
+    def test_restart_tolerates_no_daemon(
+        self, mock_run_stop: MagicMock, mock_run_start: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """'truefan restart' starts even if stop fails (no daemon running)."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text("")
+        main(["restart", "--config", str(cfg)])
+        mock_run_start.assert_called_once()
+
+    @patch("truefan.commands.start.run_start")
+    def test_restart_foreground_flag(
+        self, mock_run_start: MagicMock, tmp_path: Path,
+    ) -> None:
+        """'truefan restart --foreground' passes foreground to start."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text("")
+        with patch("truefan.commands.stop.run_stop"):
+            main(["restart", "--foreground", "--config", str(cfg)])
+        _, kwargs = mock_run_start.call_args
+        assert kwargs.get("foreground") is True
