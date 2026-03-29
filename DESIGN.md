@@ -158,6 +158,7 @@ truefan/
     main.py          # entry point, argument parsing
     commands/
         __init__.py  # shared config validation
+        check.py     # validate config without starting the daemon
         init.py      # detect fans, calibrate, generate config
         run.py       # start the daemon
         recalibrate.py # re-run fan calibration
@@ -210,5 +211,6 @@ To get proper chart names and units in Netdata, install `netdata/truefan.conf` i
 - **`truefan recalibrate [--config PATH]`** — re-run calibration on an existing config. Rebuilds setpoint tables in place and exits.
 - **`truefan sensors`** — show all detected temperature and fan RPM sensors with current readings, classifications, and hardware thresholds. Useful for verifying what the daemon sees before running it.
 - **`truefan reload`** — validate the config against live hardware, then send SIGHUP to the running daemon. Refuses to reload if the config is broken or doesn't match hardware.
+- **`truefan check [--syntax-only]`** — validate the config and print the result. With `--syntax-only`, checks only parsing without contacting hardware. Exits 0 on success, 1 on failure.
 
 Default config path: `truefan.toml` next to the script. `--config` overrides.

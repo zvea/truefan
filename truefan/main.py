@@ -35,6 +35,11 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("recalibrate", help="Re-run fan calibration on an existing config")
     sub.add_parser("sensors", help="Show all detected temperature and fan sensors")
     sub.add_parser("reload", help="Send SIGHUP to the running daemon to reload config")
+    check_parser = sub.add_parser("check", help="Validate the config file")
+    check_parser.add_argument(
+        "--syntax-only", action="store_true",
+        help="Check only TOML syntax and structure, skip hardware checks",
+    )
 
     args = parser.parse_args(argv)
 
@@ -72,6 +77,9 @@ def _dispatch(args: argparse.Namespace) -> None:
     elif args.command == "reload":
         from truefan.commands.reload import run_reload
         run_reload(args.config, PID_PATH)
+    elif args.command == "check":
+        from truefan.commands.check import run_check
+        run_check(args.config, syntax_only=args.syntax_only)
 
 
 if __name__ == "__main__":
