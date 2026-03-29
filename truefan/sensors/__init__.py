@@ -68,6 +68,8 @@ def available_backends(bmc: "BmcConnection | None" = None) -> list[SensorBackend
     """
     import shutil
 
+    # Local imports: avoid circular dependency (sensor backends import from
+    # this module, so we can't import them at module level).
     from truefan.sensors.ipmi import IpmiSensorBackend
     from truefan.sensors.lmsensors import LmSensorBackend
     from truefan.sensors.nvme import NvmeSensorBackend

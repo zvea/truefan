@@ -10,6 +10,7 @@ from truefan.bmc import BmcConnection, IpmitoolConnection
 from truefan.commands import load_and_validate
 from truefan.daemon import run as daemon_run
 from truefan.pidfile import PidFile, PidFileError, is_locked
+from truefan.watchdog import start as watchdog_start
 
 
 def run_start(
@@ -133,23 +134,20 @@ def _post_daemonize(
     else:
         _configure_syslog()
 
-    # Lazy import: only pull in watchdog when actually starting.
-    from truefan.watchdog import start
-
     if pid_path is not None:
         try:
             with PidFile(pid_path) as pf:
-                start(
+                watchdog_start(
                     daemon_fn=lambda: daemon_run(config_path, conn=conn),
                     conn=conn,
-                    close_fds=[pf.fileno()],
+                    close_fds=[fd] if (fd := pf.fileno()) is not None else [],
                 )
         except PidFileError as e:
             # In daemon mode stderr is closed; log to syslog.
             logging.getLogger(__name__).error(str(e))
             sys.exit(1)
     else:
-        start(
+        watchdog_start(
             daemon_fn=lambda: daemon_run(config_path, conn=conn),
             conn=conn,
         )

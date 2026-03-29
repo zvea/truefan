@@ -5,11 +5,13 @@ import logging
 import subprocess
 from pathlib import Path
 
+from typing import Final
+
 from truefan.sensors import SensorBackend, SensorClass, SensorReading, sensor_name
 
 _log: logging.Logger = logging.getLogger(__name__)
 
-_KELVIN_OFFSET: float = 273.15
+_KELVIN_OFFSET: Final = 273.15
 
 
 def _list_devices() -> list[Path]:

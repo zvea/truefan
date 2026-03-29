@@ -3,16 +3,17 @@
 import json
 import logging
 import subprocess
+from types import MappingProxyType
 from typing import Final
 
 from truefan.sensors import SensorBackend, SensorClass, SensorReading, sensor_name
 
 _log: logging.Logger = logging.getLogger(__name__)
 
-_CHIP_PREFIX_TO_CLASS: Final[dict[str, SensorClass]] = {
+_CHIP_PREFIX_TO_CLASS: Final = MappingProxyType({
     "coretemp": SensorClass.CPU,
     "acpitz": SensorClass.AMBIENT,
-}
+})
 
 
 def _classify_chip(chip_name: str) -> SensorClass:

@@ -73,8 +73,7 @@ def main(argv: list[str] | None = None) -> None:
     if argv is not None:
         effective = argv
     else:
-        import sys as _sys
-        effective = _sys.argv[1:]
+        effective = sys.argv[1:]
     if effective == ["help"]:
         parser.print_help()
         return

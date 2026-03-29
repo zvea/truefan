@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Final
 
 import tomlkit
 
+from truefan.fans import detect_fans
 from truefan.sensors import SensorClass
 
 if TYPE_CHECKING:
@@ -165,7 +166,7 @@ def _parse_sensor_override(name: str, table: dict) -> SensorOverride:
     )
 
 
-_FAN_KNOWN_KEYS: frozenset[str] = frozenset({"zone", "setpoints"})
+_FAN_KNOWN_KEYS: Final = frozenset({"zone", "setpoints"})
 
 
 def _parse_fan(name: str, table: dict) -> FanConfig:
@@ -334,8 +335,6 @@ def validate_config(
     Returns a list of error messages. Empty means valid.
     Checks fan set membership, zone agreement, and sensor override targets.
     """
-    from truefan.fans import detect_fans
-
     errors: list[str] = []
 
     # Fan checks: config fans vs hardware fans.

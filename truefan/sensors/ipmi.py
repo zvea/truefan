@@ -1,15 +1,16 @@
 """IPMI temperature sensor backend (CPU, ambient, chipset)."""
 
+from types import MappingProxyType
 from typing import Final
 
 from truefan.bmc import BmcConnection
 from truefan.sensors import SensorBackend, SensorClass, SensorReading, sensor_name
 
-_NAME_TO_CLASS: Final[dict[str, SensorClass]] = {
+_NAME_TO_CLASS: Final = MappingProxyType({
     "CPU Temp": SensorClass.CPU,
     "System Temp": SensorClass.AMBIENT,
     "Peripheral Temp": SensorClass.AMBIENT,
-}
+})
 
 _NVME_PREFIXES: Final[tuple[str, ...]] = ("M2NVMeSSD", "U2NVMeSSD")
 
