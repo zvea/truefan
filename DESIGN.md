@@ -196,6 +196,7 @@ The daemon pushes metrics to Netdata's statsd listener over UDP.
 | `truefan.sensor.<name>.thermal_load` | gauge | How far each sensor is between its temp_low and temp_high (0-100%). |
 | `truefan.sensor.<name>.temperature` | gauge | Current reading in °C. |
 | `truefan.zone.<name>.duty` | gauge | Current duty cycle % for each fan zone. |
+| `truefan.daemon.uptime` | gauge | Seconds since the daemon started its main loop. Resets to zero on restart. |
 | `truefan.daemon.restarts` | counter | Incremented by the watchdog each time the daemon crashes and is restarted. |
 
 The daemon logs to syslog (`LOG_DAEMON` facility, identifier `truefan`) — fan speed changes, sensor errors, stall events. Visible via `journalctl -t truefan` and `/var/log/syslog`.

@@ -22,7 +22,7 @@ from truefan.fans import (
     set_full_speed,
     set_zone_duty,
 )
-from truefan.metrics import send_target_rpm, send_temperature, send_thermal_load, send_zone_duty
+from truefan.metrics import send_target_rpm, send_temperature, send_thermal_load, send_uptime, send_zone_duty
 from truefan.sensors import SensorBackend, SensorReading, available_backends
 
 _log: logging.Logger = logging.getLogger(__name__)
@@ -151,6 +151,7 @@ def run(
     # Sliding window of (timestamp, duty) per zone for conservative spindown.
     duty_history: dict[str, deque[tuple[float, int]]] = {}
     now = time.monotonic
+    start_time = now()
 
     try:
         while True:
@@ -221,6 +222,7 @@ def run(
                 # Check for stalls.
                 config = _detect_stalls(rpms, config, config_path, conn)
 
+                send_uptime(int(now() - start_time))
                 sleep(config.poll_interval_seconds)
 
             except _Reload:

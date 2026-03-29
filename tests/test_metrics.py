@@ -7,6 +7,7 @@ from truefan.metrics import (
     send_target_rpm,
     send_temperature,
     send_thermal_load,
+    send_uptime,
     send_zone_duty,
 )
 
@@ -94,6 +95,27 @@ class TestSendTemperature:
         send_temperature("ipmi_CPU_Temp", 42.5, port=1)
 
 
+# ---------------------------------------------------------------------------
+# #### send_uptime
+# ---------------------------------------------------------------------------
+
+class TestSendUptime:
+    """Tests for send_uptime."""
+
+    def test_sends_correct_statsd_gauge(self) -> None:
+        """Sends a correctly formatted uptime gauge in seconds."""
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+
+            send_uptime(3600, port=port)
+            assert _receive_one(sock) == "truefan.daemon.uptime:3600|g"
+
+
+# ---------------------------------------------------------------------------
+# #### send_daemon_restart
+# ---------------------------------------------------------------------------
+
 class TestSendDaemonRestart:
     """Tests for send_daemon_restart."""
 
@@ -130,8 +152,13 @@ class TestNoNetdata:
         """send_thermal_load does not raise when nothing listens."""
         send_thermal_load("ipmi_CPU_Temp", 45.0, port=1)
 
+    def test_uptime_no_listener(self) -> None:
+        """send_uptime does not raise when nothing listens."""
+        send_uptime(100, port=1)
+
     def test_unreachable_host(self) -> None:
         """Metrics to an unreachable host do not raise."""
         send_target_rpm("FAN1", 620, host="192.0.2.1", port=8125)
         send_zone_duty("cpu", 50, host="192.0.2.1", port=8125)
         send_daemon_restart(host="192.0.2.1", port=8125)
+        send_uptime(100, host="192.0.2.1", port=8125)

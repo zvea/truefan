@@ -188,6 +188,26 @@ class TestDaemonRun:
         assert (0x30, 0x45, bytes([0x01, 0x01])) in sim.raw_commands
 
     @patch("truefan.daemon.available_backends")
+    def test_sends_uptime_metric(self, mock_avail, tmp_path: Path) -> None:
+        """Daemon uptime gauge is pushed to statsd each cycle."""
+        from truefan.sensors import SensorReading
+        cfg = tmp_path / "truefan.toml"
+        _write_config(cfg)
+        sim = _make_sim()
+
+        readings = [SensorReading(
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=55.0,
+        )]
+        mock_avail.side_effect = _mock_backends_factory(readings)
+
+        with patch("truefan.daemon.send_uptime") as mock_uptime:
+            run(cfg, conn=sim, sleep=_StopAfter(2))
+            assert mock_uptime.call_count == 2
+            # Uptime should be non-negative.
+            for call in mock_uptime.call_args_list:
+                assert call[0][0] >= 0
+
+    @patch("truefan.daemon.available_backends")
     def test_sends_target_rpm_metrics(self, mock_avail, tmp_path: Path) -> None:
         """Target RPM is pushed to statsd each cycle."""
         from truefan.sensors import SensorReading

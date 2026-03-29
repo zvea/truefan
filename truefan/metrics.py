@@ -63,6 +63,15 @@ def send_temperature(
     _send(f"truefan.sensor.{sensor_name}.temperature:{temp_c:.0f}|g", host, port)
 
 
+def send_uptime(
+    seconds: int,
+    host: str = DEFAULT_STATSD_HOST,
+    port: int = DEFAULT_STATSD_PORT,
+) -> None:
+    """Send the daemon uptime gauge in seconds."""
+    _send(f"truefan.daemon.uptime:{seconds}|g", host, port)
+
+
 def send_daemon_restart(
     host: str = DEFAULT_STATSD_HOST,
     port: int = DEFAULT_STATSD_PORT,
