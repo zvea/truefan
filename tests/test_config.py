@@ -309,6 +309,128 @@ class TestLoadConfig:
         with pytest.raises(ConfigError, match=r"\[curves\.sensor\.some_sensor\].*bogus"):
             load_config(cfg)
 
+    def test_fan_zones_string_instead_of_list(self, tmp_path: Path) -> None:
+        """fan_zones as a string instead of list raises ConfigError."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text(
+            '[curves.cpu]\n'
+            'temp_low = 30\n'
+            'temp_high = 80\n'
+            'duty_low = 25\n'
+            'duty_high = 100\n'
+            'fan_zones = "cpu"\n'
+        )
+        with pytest.raises(ConfigError, match="fan_zones.*list"):
+            load_config(cfg)
+
+    def test_sensor_override_fan_zones_string(self, tmp_path: Path) -> None:
+        """fan_zones as a string in a sensor override raises ConfigError."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text(
+            '[curves.other]\n'
+            'temp_low = 30\n'
+            'temp_high = 80\n'
+            'duty_low = 25\n'
+            'duty_high = 100\n'
+            'fan_zones = ["peripheral"]\n'
+            '\n'
+            '[curves.sensor.some_sensor]\n'
+            'fan_zones = "peripheral"\n'
+        )
+        with pytest.raises(ConfigError, match="fan_zones.*list"):
+            load_config(cfg)
+
+    def test_non_integer_temp(self, tmp_path: Path) -> None:
+        """Non-integer temperature raises ConfigError with section context."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text(
+            '[curves.cpu]\n'
+            'temp_low = "hot"\n'
+            'temp_high = 80\n'
+            'duty_low = 25\n'
+            'duty_high = 100\n'
+            'fan_zones = ["cpu"]\n'
+        )
+        with pytest.raises(ConfigError, match=r"\[curves\.cpu\].*temp_low"):
+            load_config(cfg)
+
+    def test_duty_out_of_range(self, tmp_path: Path) -> None:
+        """Duty percentage outside 0-100 raises ConfigError."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text(
+            '[curves.cpu]\n'
+            'temp_low = 30\n'
+            'temp_high = 80\n'
+            'duty_low = -10\n'
+            'duty_high = 100\n'
+            'fan_zones = ["cpu"]\n'
+        )
+        with pytest.raises(ConfigError, match=r"duty_low.*0.*100"):
+            load_config(cfg)
+
+    def test_duty_high_over_100(self, tmp_path: Path) -> None:
+        """duty_high > 100 raises ConfigError."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text(
+            '[curves.cpu]\n'
+            'temp_low = 30\n'
+            'temp_high = 80\n'
+            'duty_low = 25\n'
+            'duty_high = 200\n'
+            'fan_zones = ["cpu"]\n'
+        )
+        with pytest.raises(ConfigError, match=r"duty_high.*0.*100"):
+            load_config(cfg)
+
+    def test_zone_in_curve_not_in_fans(self, tmp_path: Path) -> None:
+        """Curve referencing a zone that no fan belongs to raises ConfigError."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text(
+            '[curves.cpu]\n'
+            'temp_low = 30\n'
+            'temp_high = 80\n'
+            'duty_low = 25\n'
+            'duty_high = 100\n'
+            'fan_zones = ["cpu", "nonexistent"]\n'
+            '\n'
+            '[fans.CPU_FAN1]\n'
+            'zone = "cpu"\n'
+            '\n'
+            '[fans.CPU_FAN1.setpoints]\n'
+            '25 = 320\n'
+            '100 = 1500\n'
+        )
+        with pytest.raises(ConfigError, match="nonexistent"):
+            load_config(cfg)
+
+    def test_fan_zone_not_in_any_curve(self, tmp_path: Path) -> None:
+        """Fan in a zone that no curve drives raises ConfigError."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text(
+            '[curves.cpu]\n'
+            'temp_low = 30\n'
+            'temp_high = 80\n'
+            'duty_low = 25\n'
+            'duty_high = 100\n'
+            'fan_zones = ["cpu"]\n'
+            '\n'
+            '[fans.CPU_FAN1]\n'
+            'zone = "cpu"\n'
+            '\n'
+            '[fans.CPU_FAN1.setpoints]\n'
+            '25 = 320\n'
+            '100 = 1500\n'
+            '\n'
+            '[fans.SYS_FAN1]\n'
+            'zone = "peripheral"\n'
+            '\n'
+            '[fans.SYS_FAN1.setpoints]\n'
+            '20 = 240\n'
+            '100 = 1200\n'
+        )
+        with pytest.raises(ConfigError, match="peripheral.*no curve"):
+            load_config(cfg)
+
 
 # ---------------------------------------------------------------------------
 # #### save_config
@@ -400,16 +522,20 @@ class TestSaveConfig:
             poll_interval_seconds=5,
             curves=DEFAULT_CURVES,
             fans=MappingProxyType({
-                "FAN1": FanConfig(
+                "CPU_FAN1": FanConfig(
                     zone="cpu",
                     setpoints=MappingProxyType({25: 320, 100: 1500}),
+                ),
+                "SYS_FAN1": FanConfig(
+                    zone="peripheral",
+                    setpoints=MappingProxyType({25: 300, 100: 1200}),
                 ),
             }),
         )
         save_config(cfg_path, config)
         reloaded = load_config(cfg_path)
         assert reloaded.poll_interval_seconds == 5
-        assert dict(reloaded.fans["FAN1"].setpoints) == {25: 320, 100: 1500}
+        assert dict(reloaded.fans["CPU_FAN1"].setpoints) == {25: 320, 100: 1500}
 
     def test_add_new_fan(self, tmp_path: Path) -> None:
         """Adding a fan to config creates a new section in the file."""
@@ -476,18 +602,23 @@ class TestSaveConfig:
     def test_remove_curve(self, tmp_path: Path) -> None:
         """Saving with a curve removed drops it from the file."""
         cfg_path = tmp_path / "truefan.toml"
+        fans = MappingProxyType({
+            "CPU_FAN1": FanConfig(
+                zone="cpu",
+                setpoints=MappingProxyType({25: 320, 100: 1500}),
+            ),
+            "SYS_FAN1": FanConfig(
+                zone="peripheral",
+                setpoints=MappingProxyType({25: 300, 100: 1200}),
+            ),
+        })
         config = Config(
             poll_interval_seconds=5,
             curves=MappingProxyType({
                 SensorClass.CPU: DEFAULT_CURVES[SensorClass.CPU],
                 SensorClass.DRIVE: DEFAULT_CURVES[SensorClass.DRIVE],
             }),
-            fans=MappingProxyType({
-                "FAN1": FanConfig(
-                    zone="cpu",
-                    setpoints=MappingProxyType({25: 320, 100: 1500}),
-                ),
-            }),
+            fans=fans,
         )
         save_config(cfg_path, config)
         # Now save again without the DRIVE curve.
@@ -496,7 +627,7 @@ class TestSaveConfig:
             curves=MappingProxyType({
                 SensorClass.CPU: DEFAULT_CURVES[SensorClass.CPU],
             }),
-            fans=config.fans,
+            fans=fans,
         )
         save_config(cfg_path, updated)
         reloaded = load_config(cfg_path)

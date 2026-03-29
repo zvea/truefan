@@ -300,21 +300,23 @@ class TestDaemonRun:
         """Fans in RPM readings but not in config are ignored during stall check."""
         from truefan.sensors import SensorReading
         cfg = tmp_path / "truefan.toml"
-        # Config only has CPU_FAN1, but sim also has SYS_FAN1.
-        _write_config(cfg, fans={
-            "CPU_FAN1": FanConfig(
-                zone="cpu",
-                setpoints=MappingProxyType({30: 450, 100: 1500}),
-            ),
+        # Config has CPU_FAN1 and SYS_FAN1, but sim also has SYS_FAN2.
+        _write_config(cfg)
+        sim = FanSimulator(fans={
+            "CPU_FAN1": {"max_rpm": 1500},
+            "SYS_FAN1": {"max_rpm": 1200},
+            "SYS_FAN2": {"max_rpm": 1200},
         })
-        sim = _make_sim()
+        sim.set_fan_zone("CPU_FAN1", "cpu")
+        sim.set_fan_zone("SYS_FAN1", "peripheral")
+        sim.set_fan_zone("SYS_FAN2", "peripheral")
 
         readings = [SensorReading(
             name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
-        # Should not crash despite SYS_FAN1 being in RPMs but not in config.
+        # Should not crash despite SYS_FAN2 being in RPMs but not in config.
         run(cfg, conn=sim, sleep=_StopAfter(1))
 
     @patch("truefan.daemon.available_backends")

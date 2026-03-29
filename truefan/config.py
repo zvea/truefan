@@ -92,6 +92,14 @@ class ConfigError(Exception):
     """Raised when the config file is missing, malformed, or invalid."""
 
 
+def _parse_int(section: str, key: str, value: object) -> int:
+    """Convert a config value to int, raising ConfigError on failure."""
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (ValueError, TypeError):
+        raise ConfigError(f"{section} {key} must be an integer, got {value!r}")
+
+
 _CURVE_REQUIRED_KEYS: frozenset[str] = frozenset({
     "temp_low", "temp_high", "duty_low", "duty_high", "fan_zones",
 })
@@ -113,18 +121,29 @@ def _parse_curve(name: str, table: dict) -> tuple[SensorClass, Curve]:
         raise ConfigError(
             f"[curves.{name}] unrecognized keys: {', '.join(sorted(unknown))}"
         )
-    temp_low = int(table["temp_low"])
-    temp_high = int(table["temp_high"])
+    temp_low = _parse_int(f"[curves.{name}]", "temp_low", table["temp_low"])
+    temp_high = _parse_int(f"[curves.{name}]", "temp_high", table["temp_high"])
     if temp_low > temp_high:
         raise ConfigError(
             f"[curves.{name}]: temp_low ({temp_low}) > temp_high ({temp_high})"
         )
+    duty_low = _parse_int(f"[curves.{name}]", "duty_low", table["duty_low"])
+    duty_high = _parse_int(f"[curves.{name}]", "duty_high", table["duty_high"])
+    if not 0 <= duty_low <= 100:
+        raise ConfigError(f"[curves.{name}] duty_low must be 0-100, got {duty_low}")
+    if not 0 <= duty_high <= 100:
+        raise ConfigError(f"[curves.{name}] duty_high must be 0-100, got {duty_high}")
+    fan_zones = table["fan_zones"]
+    if isinstance(fan_zones, str):
+        raise ConfigError(
+            f"[curves.{name}] fan_zones must be a list, not a string"
+        )
     return sensor_class, Curve(
         temp_low=temp_low,
         temp_high=temp_high,
-        duty_low=int(table["duty_low"]),
-        duty_high=int(table["duty_high"]),
-        fan_zones=frozenset(table["fan_zones"]),
+        duty_low=duty_low,
+        duty_high=duty_high,
+        fan_zones=frozenset(fan_zones),
     )
 
 
@@ -140,12 +159,18 @@ def _parse_sensor_override(name: str, table: dict) -> SensorOverride:
         raise ConfigError(
             f"[curves.sensor.{name}] unrecognized keys: {', '.join(sorted(unknown))}"
         )
+    section = f"[curves.sensor.{name}]"
+    fan_zones = None
+    if "fan_zones" in table:
+        if isinstance(table["fan_zones"], str):
+            raise ConfigError(f"{section} fan_zones must be a list, not a string")
+        fan_zones = frozenset(table["fan_zones"])
     return SensorOverride(
-        temp_low=int(table["temp_low"]) if "temp_low" in table else None,
-        temp_high=int(table["temp_high"]) if "temp_high" in table else None,
-        duty_low=int(table["duty_low"]) if "duty_low" in table else None,
-        duty_high=int(table["duty_high"]) if "duty_high" in table else None,
-        fan_zones=frozenset(table["fan_zones"]) if "fan_zones" in table else None,
+        temp_low=_parse_int(section, "temp_low", table["temp_low"]) if "temp_low" in table else None,
+        temp_high=_parse_int(section, "temp_high", table["temp_high"]) if "temp_high" in table else None,
+        duty_low=_parse_int(section, "duty_low", table["duty_low"]) if "duty_low" in table else None,
+        duty_high=_parse_int(section, "duty_high", table["duty_high"]) if "duty_high" in table else None,
+        fan_zones=fan_zones,
     )
 
 
@@ -222,6 +247,21 @@ def load_config(path: Path) -> Config:
     fans: dict[str, FanConfig] = {}
     for name, table in doc.get("fans", {}).items():
         fans[name] = _parse_fan(name, table)
+
+    # Cross-validate zone names between curves and fans.
+    if curves and fans:
+        curve_zones: set[str] = set()
+        for curve in curves.values():
+            curve_zones.update(curve.fan_zones)
+        fan_zones: set[str] = {fc.zone for fc in fans.values()}
+        for zone in sorted(curve_zones - fan_zones):
+            raise ConfigError(
+                f"Zone {zone!r} is referenced by a curve but no fan is assigned to it"
+            )
+        for zone in sorted(fan_zones - curve_zones):
+            raise ConfigError(
+                f"Zone {zone!r} has fans but no curve drives it"
+            )
 
     return Config(
         poll_interval_seconds=poll_interval,
