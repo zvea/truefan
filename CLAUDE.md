@@ -46,6 +46,16 @@ Check with `pytest --cov --cov-report=term-missing`. Fill gaps that have a clear
 
 Never retroactively edit past entries. They describe what was true at the time of that release.
 
+## Release
+
+The user decides the version number. Once given:
+
+1. Write changelog entry in `CHANGELOG.md`.
+   **STOP. Wait for the user to review and approve before continuing.**
+2. Commit the changelog.
+3. Tag `vX.Y.Z` and push main + tag.
+4. Monitor CI (`gh run watch`) until publish to PyPI succeeds.
+
 ## Git
 
 Do not commit unless the user explicitly asks you to.
