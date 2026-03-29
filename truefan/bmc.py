@@ -7,6 +7,7 @@ and sensor reading import from here.
 import csv
 import io
 import logging
+import os
 import subprocess
 import time
 from abc import ABC, abstractmethod
@@ -53,6 +54,18 @@ class BmcConnection(ABC):
     @abstractmethod
     def list_temperature_sensors(self) -> list[TemperatureSensorData]:
         """List all temperature sensors with optional thresholds."""
+
+
+_IPMI_DEVICE_PATHS: Final[tuple[str, ...]] = (
+    "/dev/ipmi0",
+    "/dev/ipmi/0",
+    "/dev/ipmidev/0",
+)
+
+
+def ipmi_device_present() -> bool:
+    """Check whether an IPMI device node exists on this machine."""
+    return any(os.path.exists(p) for p in _IPMI_DEVICE_PATHS)
 
 
 class BmcError(Exception):

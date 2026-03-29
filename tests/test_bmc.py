@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from truefan.bmc import BmcError, IpmitoolConnection
+from truefan.bmc import BmcError, IpmitoolConnection, ipmi_device_present
 
 
 _FAN_CSV = (
@@ -31,6 +31,29 @@ def _make_result(stdout: str = "") -> MagicMock:
     result = MagicMock()
     result.stdout = stdout.encode()
     return result
+
+
+# ---------------------------------------------------------------------------
+# #### ipmi_device_present
+# ---------------------------------------------------------------------------
+
+class TestIpmiDevicePresent:
+    """Tests for ipmi_device_present."""
+
+    @patch("truefan.bmc.os.path.exists", return_value=False)
+    def test_no_device(self, mock_exists) -> None:  # noqa: ANN001
+        """Returns False when no IPMI device nodes exist."""
+        assert ipmi_device_present() is False
+
+    @patch("truefan.bmc.os.path.exists", side_effect=lambda p: p == "/dev/ipmi0")
+    def test_ipmi0_exists(self, mock_exists) -> None:  # noqa: ANN001
+        """Returns True when /dev/ipmi0 exists."""
+        assert ipmi_device_present() is True
+
+    @patch("truefan.bmc.os.path.exists", side_effect=lambda p: p == "/dev/ipmidev/0")
+    def test_ipmidev0_exists(self, mock_exists) -> None:  # noqa: ANN001
+        """Returns True when an alternate device path exists."""
+        assert ipmi_device_present() is True
 
 
 # ---------------------------------------------------------------------------

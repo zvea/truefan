@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 from truefan.bmc import BmcConnection, TemperatureSensorData
+from truefan.commands.sensors import run_sensors
 from truefan.sensors import SensorClass, SensorReading
 from truefan.sensors.ipmi import IpmiSensorBackend
 
@@ -41,70 +42,58 @@ def _mock_backends(bmc):  # noqa: ANN001, ANN202
 class TestRunSensors:
     """Tests for the sensors subcommand output."""
 
-    @patch("truefan.commands.sensors.IpmitoolConnection", MockBmc)
     @patch("truefan.commands.sensors.available_backends", side_effect=_mock_backends)
     def test_prints_temperature_header(self, mock_backends, capsys) -> None:  # noqa: ANN001
         """Output includes the temperature sensors header."""
-        from truefan.commands.sensors import run_sensors
-        run_sensors()
+        run_sensors(conn=MockBmc())
         out = capsys.readouterr().out
         assert "Temperature sensors" in out
         assert "CLASS" in out
         assert "SENSOR" in out
 
-    @patch("truefan.commands.sensors.IpmitoolConnection", MockBmc)
     @patch("truefan.commands.sensors.available_backends", side_effect=_mock_backends)
     def test_prints_temperature_readings(self, mock_backends, capsys) -> None:  # noqa: ANN001
         """Output includes temperature readings with thresholds."""
-        from truefan.commands.sensors import run_sensors
-        run_sensors()
+        run_sensors(conn=MockBmc())
         out = capsys.readouterr().out
         assert "ipmi_CPU_Temp" in out
         assert "31.0" in out
         assert "80.0" in out
         assert "100.0" in out
 
-    @patch("truefan.commands.sensors.IpmitoolConnection", MockBmc)
     @patch("truefan.commands.sensors.available_backends", side_effect=_mock_backends)
     def test_prints_fan_header(self, mock_backends, capsys) -> None:  # noqa: ANN001
         """Output includes the fan sensors header."""
-        from truefan.commands.sensors import run_sensors
-        run_sensors()
+        run_sensors(conn=MockBmc())
         out = capsys.readouterr().out
         assert "Fan sensors" in out
         assert "FAN" in out
         assert "ZONE" in out
         assert "RPM" in out
 
-    @patch("truefan.commands.sensors.IpmitoolConnection", MockBmc)
     @patch("truefan.commands.sensors.available_backends", side_effect=_mock_backends)
     def test_prints_fan_readings(self, mock_backends, capsys) -> None:  # noqa: ANN001
         """Output includes fan RPMs and zone mappings."""
-        from truefan.commands.sensors import run_sensors
-        run_sensors()
+        run_sensors(conn=MockBmc())
         out = capsys.readouterr().out
         assert "CPU_FAN1" in out
         assert "1300" in out
         assert "cpu" in out
 
-    @patch("truefan.commands.sensors.IpmitoolConnection", MockBmc)
     @patch("truefan.commands.sensors.available_backends", side_effect=_mock_backends)
     def test_inactive_fan_shows_dash(self, mock_backends, capsys) -> None:  # noqa: ANN001
         """Fans without readings show a dash."""
-        from truefan.commands.sensors import run_sensors
-        run_sensors()
+        run_sensors(conn=MockBmc())
         out = capsys.readouterr().out
         # CPU_FAN2 line should have a dash for RPM
         lines = [l for l in out.splitlines() if "CPU_FAN2" in l]
         assert len(lines) == 1
         assert "-" in lines[0]
 
-    @patch("truefan.commands.sensors.IpmitoolConnection", MockBmc)
     @patch("truefan.commands.sensors.available_backends", side_effect=_mock_backends)
     def test_missing_threshold_shows_dash(self, mock_backends, capsys) -> None:  # noqa: ANN001
         """Sensors without thresholds show dashes."""
-        from truefan.commands.sensors import run_sensors
-        run_sensors()
+        run_sensors(conn=MockBmc())
         out = capsys.readouterr().out
         # System Temp has no thresholds in our mock
         lines = [l for l in out.splitlines() if "System_Temp" in l]
@@ -119,11 +108,34 @@ class TestRunSensors:
             def list_fans(self) -> list[tuple[str, int | None]]:
                 return [("WEIRD_FAN1", 500)]
 
-        with patch("truefan.commands.sensors.IpmitoolConnection", MockBmcWithUnknownFan), \
-             patch("truefan.commands.sensors.available_backends", side_effect=_mock_backends):
-            from truefan.commands.sensors import run_sensors
-            run_sensors()
+        with patch("truefan.commands.sensors.available_backends", side_effect=_mock_backends):
+            run_sensors(conn=MockBmcWithUnknownFan())
         out = capsys.readouterr().out
         lines = [l for l in out.splitlines() if "WEIRD_FAN1" in l]
         assert len(lines) == 1
         assert "?" in lines[0]
+
+    def test_no_bmc_shows_available_sensors(self, capsys) -> None:
+        """Without IPMI, shows non-IPMI sensors and a message about fans."""
+        readings = [
+            SensorReading(name="smart_sda", sensor_class=SensorClass.DRIVE, temperature=35.0),
+        ]
+
+        def _non_ipmi_backends(bmc):  # noqa: ANN001, ANN202
+            from truefan.sensors import SensorBackend
+
+            class FakeBackend(SensorBackend):
+                def scan(self) -> list[SensorReading]:
+                    return readings
+
+            return [FakeBackend()]
+
+        with patch("truefan.commands.sensors.ipmi_device_present", return_value=False), \
+             patch("truefan.commands.sensors.available_backends", side_effect=_non_ipmi_backends):
+            run_sensors()
+
+        out = capsys.readouterr().out
+        assert "smart_sda" in out
+        assert "35.0" in out
+        assert "No IPMI device" in out
+        assert "Fan sensors" not in out
