@@ -136,19 +136,20 @@ def _post_daemonize(
     # Lazy import: only pull in watchdog when actually starting.
     from truefan.watchdog import start
 
-    def watchdog() -> None:
-        start(
-            daemon_fn=lambda: daemon_run(config_path, conn=conn),
-            conn=conn,
-        )
-
     if pid_path is not None:
         try:
-            with PidFile(pid_path):
-                watchdog()
+            with PidFile(pid_path) as pf:
+                start(
+                    daemon_fn=lambda: daemon_run(config_path, conn=conn),
+                    conn=conn,
+                    close_fds=[pf.fileno()],
+                )
         except PidFileError as e:
             # In daemon mode stderr is closed; log to syslog.
             logging.getLogger(__name__).error(str(e))
             sys.exit(1)
     else:
-        watchdog()
+        start(
+            daemon_fn=lambda: daemon_run(config_path, conn=conn),
+            conn=conn,
+        )

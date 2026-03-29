@@ -1,12 +1,13 @@
 """Watchdog parent process that supervises the daemon."""
 
+import ctypes
 import logging
 import os
 import signal
 import sys
 import time
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Final
 
 from truefan.bmc import BmcConnection
 from truefan.fans import set_full_speed
@@ -14,17 +15,23 @@ from truefan.metrics import send_daemon_restart
 
 _log: logging.Logger = logging.getLogger(__name__)
 
+_PR_SET_PDEATHSIG: Final[int] = 1
+_libc = ctypes.CDLL("libc.so.6", use_errno=True)
+
 
 def start(
     daemon_fn: Callable[[], None],
     conn: BmcConnection,
     restart_delay: float = 2.0,
+    close_fds: list[int] | None = None,
 ) -> None:
     """Spawn and monitor the daemon.
 
     Forks a child to run daemon_fn. If the child exits unexpectedly,
-    sets all fans to 100% and restarts. On SIGTERM or SIGHUP, forwards
-    the signal to the child.
+    sets all fans to 100% and restarts. Forwards SIGTERM, SIGHUP, and
+    SIGUSR1 to the child. The child sets PR_SET_PDEATHSIG so it receives
+    SIGTERM if the watchdog dies. Any file descriptors in close_fds are
+    closed in the child after fork (e.g. the PID file lock fd).
     """
     child_pid: int = 0
 
@@ -47,11 +54,18 @@ def start(
 
     signal.signal(signal.SIGTERM, _forward_signal)
     signal.signal(signal.SIGHUP, _forward_signal)
+    signal.signal(signal.SIGUSR1, _forward_signal)
 
     while True:
         child_pid = os.fork()
         if child_pid == 0:
-            # Child process — run the daemon.
+            # Child process — close inherited fds and request SIGTERM on parent death.
+            for fd in close_fds or ():
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            _libc.prctl(_PR_SET_PDEATHSIG, signal.SIGTERM)
             try:
                 daemon_fn()
                 os._exit(0)

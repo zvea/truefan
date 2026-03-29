@@ -60,6 +60,10 @@ class PidFile:
         os.fsync(self._fd)
         return self
 
+    def fileno(self) -> int | None:
+        """Return the underlying file descriptor, or None if not held."""
+        return self._fd
+
     def __exit__(self, *args: object) -> None:
         """Release the lock and remove the PID file."""
         if self._fd is not None:

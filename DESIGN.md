@@ -25,7 +25,9 @@ TrueFan is a fan control daemon for TrueNAS SCALE systems based on Supermicro X1
 
 `truefan start` daemonizes via the classic double-fork: fork, `setsid`, fork again, then close stdin/stdout/stderr and redirect to `/dev/null`. The original process prints the daemon PID and exits immediately, returning the shell prompt. `truefan start --foreground` skips the double-fork — the watchdog runs in the foreground with logging to stderr instead of syslog. Useful for debugging and systemd `Type=simple` service files.
 
-After daemonization, a **watchdog parent** spawns the daemon as a child. If the child dies unexpectedly, the parent sets all fans to 100% and restarts it. On SIGTERM, the parent forwards the signal; the child sets fans to full speed and exits; the parent follows.
+After daemonization, a **watchdog parent** spawns the daemon as a child. If the child dies unexpectedly, the parent sets all fans to 100% and restarts it. On SIGTERM, the parent forwards the signal; the child sets fans to full speed and exits; the parent follows. The watchdog forwards SIGHUP and SIGUSR1 to the child as well.
+
+The child closes the PID file descriptor after fork so that only the watchdog holds the lock. The child also sets `PR_SET_PDEATHSIG` to SIGTERM so that if the watchdog dies unexpectedly, the child receives SIGTERM and performs a clean shutdown (fans to full speed).
 
 A PID file (`/var/run/truefan.pid`) with OS-level `flock` prevents multiple instances. The PID file holds the watchdog's PID (the outermost long-lived process after daemonization). `truefan start` acquires the lock after daemonizing; the lock is released automatically on process exit (including `kill -9`). `truefan stop` reads the PID file, verifies the lock is held, sends SIGTERM, and waits for the process to exit. `truefan init` and `truefan recalibrate` acquire the lock for the duration of their work, preventing conflicts with a running daemon or each other. `truefan sensors` is read-only and skips the check.
 
