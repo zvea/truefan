@@ -76,11 +76,12 @@ sudo truefan stop
 To get Netdata dashboards and alerts, install the bundled configs:
 
 ```bash
-sudo ./netdata/install.sh standalone
+sudo ./netdata/setup.sh standalone
 ```
 
 In a streaming setup, run with `child` on the daemon box and `parent` on the
-central Netdata instance. See `./netdata/install.sh --help` for details.
+central Netdata instance. Use `none` to uninstall. See `./netdata/setup.sh --help`
+for details.
 
 ## Configuration
 
