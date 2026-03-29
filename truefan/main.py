@@ -53,6 +53,15 @@ def main(argv: list[str] | None = None) -> None:
         "--syntax-only", action="store_true",
         help="Check only TOML syntax and structure, skip hardware checks",
     )
+    # "truefan help" prints help without appearing in the subcommand list.
+    if argv is not None:
+        effective = argv
+    else:
+        import sys as _sys
+        effective = _sys.argv[1:]
+    if effective == ["help"]:
+        parser.print_help()
+        return
 
     args = parser.parse_args(argv)
 

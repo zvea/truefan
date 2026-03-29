@@ -43,3 +43,29 @@ class TestConfigPosition:
         # Parent gets bad, subcommand gets good — good should win.
         main(["--config", str(bad), "check", "--config", str(good), "--syntax-only"])
         assert "Config OK" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# #### help subcommand
+# ---------------------------------------------------------------------------
+
+class TestHelp:
+    """Tests for the help subcommand."""
+
+    def test_help_prints_usage(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """'truefan help' prints the help page."""
+        main(["help"])
+        out = capsys.readouterr().out
+        assert "Fan control daemon" in out
+        assert "init" in out
+
+    def test_help_not_in_subcommand_list(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """'help' does not appear as a listed subcommand."""
+        main(["help"])
+        out = capsys.readouterr().out
+        # "help" appears in the -h/--help option but not in the subcommand list.
+        # The subcommand list is in the {init,run,...} line.
+        lines = [l for l in out.splitlines() if l.strip().startswith("help")]
+        # Only the -h/--help line should match, not a subcommand entry.
+        for line in lines:
+            assert "--help" in line or "-h" in line
