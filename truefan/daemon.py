@@ -42,8 +42,10 @@ def _read_all_sensors(backends: list[SensorBackend]) -> list[SensorReading]:
     for backend in backends:
         try:
             readings.extend(backend.scan())
-        except Exception:
-            _log.warning("Sensor backend %s failed", type(backend).__name__, exc_info=True)
+        except (_Shutdown, _Reload):
+            raise
+        except Exception as e:
+            _log.warning("Sensor backend %s failed: %s", type(backend).__name__, e)
     return readings
 
 

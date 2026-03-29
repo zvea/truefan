@@ -19,8 +19,8 @@ def _send(
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.sendto(msg.encode(), (host, port))
-    except OSError:
-        _log.warning("Failed to send statsd metric: %s", msg, exc_info=True)
+    except OSError as e:
+        _log.warning("Failed to send statsd metric: %s: %s", msg, e)
 
 
 def send_target_rpm(
