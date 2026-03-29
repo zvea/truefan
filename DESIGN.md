@@ -1,6 +1,6 @@
 # TrueFan Design
 
-TrueFan is a fan control daemon for TrueNAS SCALE systems based on Supermicro X11 motherboards. It reads temperatures from IPMI, SMART, NVMe, and lm-sensors, then adjusts fan duty cycles via IPMI to keep things cool with minimal noise.
+TrueFan is a fan control daemon for TrueNAS SCALE systems based on Supermicro X11 motherboards. It reads temperatures from IPMI, SMART, NVMe, and lm-sensors, then adjusts fan duty cycles via IPMI to keep things cool with minimal noise. It exports thermal load, duty, and RPM metrics to Netdata via statsd.
 
 ## Goals
 

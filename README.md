@@ -2,7 +2,8 @@
 
 Fan control daemon for TrueNAS SCALE systems on Supermicro X11 boards. Reads
 temperatures from IPMI, SMART, NVMe, and lm-sensors, then adjusts fan duty
-cycles via IPMI raw commands to keep things cool with minimal noise.
+cycles via IPMI raw commands to keep things cool with minimal noise. Exports
+thermal load, duty, and RPM metrics to Netdata via statsd.
 
 ## Features
 
