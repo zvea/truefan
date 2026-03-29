@@ -67,7 +67,7 @@ Always ask before introducing any new dependency.
 - All imports at module level only — except in `main.py` (lazy subcommand loading) and `sensors/__init__.py` (circular import avoidance). Comment the reason.
 - Every module and function must have a docstring: a brief description, plus any non-obvious behaviour or constraints worth noting. Omit obvious parameter/return documentation.
 - All functions and methods must have type annotations on parameters and return values.
-- Annotate module-level constants with `Final` and use immutable container types (`frozenset`, `tuple`, `MappingProxyType`) rather than mutable ones.
+- Annotate module-level constants with `Final` (bare — only parameterise when the inferred type would be wrong) and use immutable container types (`frozenset`, `tuple`, `MappingProxyType`) rather than mutable ones.
 - Use built-in generic types, always parameterised: `list[int]` not `list` or `List[int]`, `dict[str, int]` not `dict` or `Dict[str, int]`, etc.
 - Use `x | None` not `Optional[x]`.
 - Prefer `@dataclass` over named tuples and dicts for structured data. Default to `@dataclass(frozen=True, kw_only=True)`.
