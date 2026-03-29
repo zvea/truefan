@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0
+
+- **Netdata setup overhaul.** `install.sh` is now `setup.sh` with `install`/`uninstall` commands replacing the old `child`/`parent`/`standalone` roles. Config files moved to `netdata/statsd.d/` and `netdata/health.d/` to mirror the Netdata directory layout.
+- **Not-reporting alert fix.** The `truefan_not_reporting` alert now detects a stale uptime counter instead of checking for NaN, which Netdata's statsd synthetic charts never produce — they repeat the last gauge value forever.
+
 ## 1.0.0
 
 - **Daemon lifecycle.** New `start`, `stop`, `restart` commands replace the old `run` command. The daemon now double-forks, writes a PID file, and returns your shell immediately. `truefan status` checks if it's running.
