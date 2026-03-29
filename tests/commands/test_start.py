@@ -10,7 +10,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from tests.mocks import FanSimulator
-from truefan.commands.start import _configure_syslog, _daemonize, run_start
+from truefan.commands.start import (
+    _configure_syslog,
+    _daemonize,
+    _post_daemonize,
+    run_start,
+)
 from truefan.config import Config, Curve, FanConfig, save_config
 from truefan.pidfile import PidFile
 from truefan.sensors import SensorClass
@@ -224,3 +229,111 @@ class TestConfigureSyslog:
             for h in root.handlers:
                 if h not in handlers_before:
                     root.removeHandler(h)
+
+
+# ---------------------------------------------------------------------------
+# #### _daemonize print path
+# ---------------------------------------------------------------------------
+
+class TestDaemonizePrint:
+    """Tests for the PID-printing path in _daemonize."""
+
+    @patch("truefan.commands.start.os._exit")
+    @patch("truefan.commands.start.os.close")
+    @patch("truefan.commands.start.os.pipe", return_value=(10, 11))
+    @patch("truefan.commands.start.os.fork")
+    def test_parent_prints_pid(
+        self, mock_fork: MagicMock, mock_pipe: MagicMock,
+        mock_close: MagicMock, mock_exit: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """The original process prints the daemon PID received via pipe."""
+        mock_fork.return_value = 42
+        # Simulate reading "1234\n" then EOF from the pipe.
+        with patch("truefan.commands.start.os.read", side_effect=[b"1234\n", b""]):
+            mock_exit.side_effect = SystemExit(0)
+            with pytest.raises(SystemExit):
+                _daemonize()
+        assert "1234" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# #### _post_daemonize
+# ---------------------------------------------------------------------------
+
+class TestPostDaemonize:
+    """Tests for _post_daemonize."""
+
+    @patch("truefan.commands.start.watchdog_start")
+    @patch("truefan.commands.start._configure_stderr")
+    def test_foreground_configures_stderr(
+        self, mock_stderr: MagicMock, mock_watchdog: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Foreground mode sets up stderr logging."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text("")
+        sim = _make_matching_sim()
+        _post_daemonize(cfg, sim, pid_path=None, foreground=True)
+        mock_stderr.assert_called_once()
+        mock_watchdog.assert_called_once()
+
+    @patch("truefan.commands.start.watchdog_start")
+    @patch("truefan.commands.start._configure_syslog")
+    def test_daemon_configures_syslog(
+        self, mock_syslog: MagicMock, mock_watchdog: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Daemon mode sets up syslog logging."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text("")
+        sim = _make_matching_sim()
+        _post_daemonize(cfg, sim, pid_path=None, foreground=False)
+        mock_syslog.assert_called_once()
+
+    @patch("truefan.commands.start.watchdog_start")
+    @patch("truefan.commands.start._configure_stderr")
+    def test_with_pid_file(
+        self, mock_stderr: MagicMock, mock_watchdog: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Acquires PID file lock and passes close_fds to watchdog."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text("")
+        pid_path = tmp_path / "truefan.pid"
+        sim = _make_matching_sim()
+        _post_daemonize(cfg, sim, pid_path=pid_path, foreground=True)
+        mock_watchdog.assert_called_once()
+        _, kwargs = mock_watchdog.call_args
+        assert "close_fds" in kwargs
+
+    @patch("truefan.commands.start.watchdog_start")
+    @patch("truefan.commands.start._configure_stderr")
+    def test_pid_file_locked_exits(
+        self, mock_stderr: MagicMock, mock_watchdog: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Exits if PID file is already locked."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text("")
+        pid_path = tmp_path / "truefan.pid"
+        sim = _make_matching_sim()
+        with PidFile(pid_path):
+            with pytest.raises(SystemExit) as exc_info:
+                _post_daemonize(cfg, sim, pid_path=pid_path, foreground=True)
+            assert exc_info.value.code == 1
+
+    @patch("truefan.commands.start.watchdog_start")
+    @patch("truefan.commands.start._configure_stderr")
+    def test_no_pid_path(
+        self, mock_stderr: MagicMock, mock_watchdog: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """With pid_path=None, starts watchdog without PID file."""
+        cfg = tmp_path / "truefan.toml"
+        cfg.write_text("")
+        sim = _make_matching_sim()
+        _post_daemonize(cfg, sim, pid_path=None, foreground=True)
+        mock_watchdog.assert_called_once()
+        _, kwargs = mock_watchdog.call_args
+        assert "close_fds" not in kwargs

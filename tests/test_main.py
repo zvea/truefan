@@ -140,3 +140,124 @@ class TestSubcommandRecognition:
             main(["restart", "--foreground", "--config", str(cfg)])
         _, kwargs = mock_run_start.call_args
         assert kwargs.get("foreground") is True
+
+    @patch("truefan.commands.init.run_init")
+    def test_init_dispatches(self, mock: MagicMock, tmp_path: Path) -> None:
+        """'truefan init' dispatches to run_init."""
+        cfg = tmp_path / "truefan.toml"
+        main(["init", "--config", str(cfg)])
+        mock.assert_called_once()
+
+    @patch("truefan.commands.recalibrate.run_recalibrate")
+    def test_recalibrate_dispatches(self, mock: MagicMock, tmp_path: Path) -> None:
+        """'truefan recalibrate' dispatches to run_recalibrate."""
+        cfg = tmp_path / "truefan.toml"
+        main(["recalibrate", "--config", str(cfg)])
+        mock.assert_called_once()
+
+    @patch("truefan.commands.status.run_status")
+    def test_status_dispatches(self, mock: MagicMock) -> None:
+        """'truefan status' dispatches to run_status."""
+        main(["status"])
+        mock.assert_called_once()
+
+    @patch("truefan.commands.sensors.run_sensors")
+    def test_sensors_dispatches(self, mock: MagicMock) -> None:
+        """'truefan sensors' dispatches to run_sensors."""
+        main(["sensors"])
+        mock.assert_called_once()
+
+    @patch("truefan.commands.reload.run_reload")
+    def test_reload_dispatches(self, mock: MagicMock, tmp_path: Path) -> None:
+        """'truefan reload' dispatches to run_reload."""
+        cfg = tmp_path / "truefan.toml"
+        main(["reload", "--config", str(cfg)])
+        mock.assert_called_once()
+
+    @patch("truefan.commands.check.run_check")
+    def test_check_dispatches(self, mock: MagicMock, tmp_path: Path) -> None:
+        """'truefan check' dispatches to run_check."""
+        cfg = tmp_path / "truefan.toml"
+        main(["check", "--config", str(cfg)])
+        mock.assert_called_once()
+
+    @patch("truefan.commands.logs.run_logs")
+    def test_logs_dispatches(self, mock: MagicMock) -> None:
+        """'truefan logs' dispatches to run_logs."""
+        main(["logs"])
+        mock.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# #### logs arg forwarding
+# ---------------------------------------------------------------------------
+
+class TestLogsArgForwarding:
+    """Tests for logs argument splitting."""
+
+    @patch("truefan.commands.logs.run_logs")
+    def test_extra_args_forwarded(self, mock: MagicMock) -> None:
+        """Extra args after 'logs' are forwarded to run_logs."""
+        main(["logs", "-f", "-n", "50"])
+        mock.assert_called_once_with(["-f", "-n", "50"])
+
+    @patch("truefan.commands.logs.run_logs")
+    def test_no_extra_args(self, mock: MagicMock) -> None:
+        """'truefan logs' with no extra args passes an empty list."""
+        main(["logs"])
+        mock.assert_called_once_with([])
+
+
+# ---------------------------------------------------------------------------
+# #### no subcommand
+# ---------------------------------------------------------------------------
+
+class TestNoSubcommand:
+    """Tests for invocation with no subcommand."""
+
+    def test_no_args_prints_help(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """'truefan' with no subcommand prints help."""
+        main([])
+        out = capsys.readouterr().out
+        assert "Fan control daemon" in out
+
+
+# ---------------------------------------------------------------------------
+# #### argv=None fallback
+# ---------------------------------------------------------------------------
+
+class TestArgvNone:
+    """Tests for main(None) falling back to sys.argv."""
+
+    @patch("truefan.commands.sensors.run_sensors")
+    def test_uses_sys_argv(self, mock: MagicMock) -> None:
+        """main(None) reads from sys.argv."""
+        import sys
+        with patch.object(sys, "argv", ["truefan", "sensors"]):
+            main(None)
+        mock.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# #### error handling
+# ---------------------------------------------------------------------------
+
+class TestErrorHandling:
+    """Tests for exception handling in main()."""
+
+    def test_exception_prints_to_stderr(
+        self, capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """An exception from a subcommand prints to stderr and exits 1."""
+        with patch("truefan.commands.sensors.run_sensors", side_effect=RuntimeError("boom")):
+            with pytest.raises(SystemExit) as exc_info:
+                main(["sensors"])
+            assert exc_info.value.code == 1
+        assert "boom" in capsys.readouterr().err
+
+    def test_keyboard_interrupt_exits_130(self) -> None:
+        """KeyboardInterrupt exits with code 130."""
+        with patch("truefan.commands.sensors.run_sensors", side_effect=KeyboardInterrupt):
+            with pytest.raises(SystemExit) as exc_info:
+                main(["sensors"])
+            assert exc_info.value.code == 130
