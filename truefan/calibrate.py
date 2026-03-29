@@ -1,6 +1,5 @@
 """Fan calibration and stall recovery."""
 
-import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -10,8 +9,6 @@ from typing import Callable, Final
 from truefan.bmc import BmcConnection
 from truefan.config import FanConfig
 from truefan.fans import read_fan_rpms, set_full_speed, set_zone_duty
-
-_log: logging.Logger = logging.getLogger(__name__)
 
 SETTLE_SECONDS: Final[float] = 10.0
 
@@ -105,19 +102,13 @@ def calibrate_fans(
                 rpm = rpms.get(fan_name)
                 if rpm is None or rpm == 0:
                     print(f"  {fan_name} @ {duty}% = STALLED (zero RPM)")
-                    _log.info("%s @ %d%% = STALLED (zero RPM)", fan_name, duty)
                     stalled_fans.add(fan_name)
                     continue
                 if fan_name in prev_rpm and rpm > prev_rpm[fan_name]:
                     print(f"  {fan_name} @ {duty}% = STALLED (RPM spike)")
-                    _log.info(
-                        "%s @ %d%% = STALLED (RPM increased from %d to %d)",
-                        fan_name, duty, prev_rpm[fan_name], rpm,
-                    )
                     stalled_fans.add(fan_name)
                     continue
                 print(f"  {fan_name} @ {duty}% = {rpm} RPM")
-                _log.info("%s @ %d%% = %d RPM", fan_name, duty, rpm)
                 setpoints[fan_name][duty] = rpm
                 prev_rpm[fan_name] = rpm
                 all_stalled = False

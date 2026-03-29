@@ -2,7 +2,6 @@
 
 import logging
 import signal
-import sys
 import time
 from collections import deque
 from dataclasses import replace
@@ -94,7 +93,6 @@ def _detect_stalls(
         # Fan stalled — kick zone to 100%.
         zone = fan_config.zone
         _log.warning("Fan %s stalled (0 RPM), setting zone %s to 100%%", fan_rpm.name, zone)
-        print(f"STALL: {fan_rpm.name} at 0 RPM, zone {zone} set to 100%", file=sys.stderr)
         set_zone_duty(conn, zone, 100)
 
         # Remove lowest setpoint.
