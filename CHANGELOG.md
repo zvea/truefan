@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0
+
+- **Config format changed.** `[curves.<class>]` sections are now `[thermal.class.<class>]` and `[curves.sensor.<name>]` overrides are now `[thermal.sensor.<name>]`. The fields `temp_low`/`temp_high` are renamed to `no_cooling_temp`/`max_cooling_temp`. The `duty_low` and `duty_high` fields are removed. You must update your `truefan.toml` to match, or delete it and re-run `truefan init` — the daemon will refuse to start with the old format.
+- **Simpler duty cycle model.** Duty cycle is now interpolated from 0% to 100% across the temperature range. Fan calibration setpoints handle the physical minimum — no need to configure duty cycle bounds per sensor class.
+- **Init shows sensor counts.** `truefan init` now shows how many sensors were detected in each class.
+
 ## 1.1.0
 
 - **Netdata setup overhaul.** `install.sh` is now `setup.sh` with `install`/`uninstall` commands replacing the old `child`/`parent`/`standalone` roles. Config files moved to `netdata/statsd.d/` and `netdata/health.d/` to mirror the Netdata directory layout.
