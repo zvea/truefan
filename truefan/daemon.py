@@ -14,6 +14,7 @@ from truefan.calibrate import remove_lowest_setpoint
 from truefan.config import Config, FanConfig, load_config, save_config
 from truefan.control import ZoneDuty, compute_thermal_load, compute_zone_duties
 from truefan.fans import (
+    ZONES,
     FanRpm,
     enable_manual_control,
     fan_zone,
@@ -96,6 +97,7 @@ def _detect_stalls(
         zone = fan_config.zone
         _log.warning("Fan %s stalled (0 RPM), setting zone %s to 100%%", fan_rpm.name, zone)
         set_zone_duty(conn, zone, 100)
+        send_zone_duty(zone, 100)
 
         # Remove lowest setpoint.
         new_fan_config = remove_lowest_setpoint(fan_config)
@@ -239,3 +241,5 @@ def run(
     finally:
         _log.info("Setting fans to full speed")
         set_full_speed(conn)
+        for zone in ZONES:
+            send_zone_duty(zone, 100)

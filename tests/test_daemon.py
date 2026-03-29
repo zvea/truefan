@@ -373,6 +373,47 @@ class TestDaemonRun:
         assert 100 in zone_duties.get(0x00, [])
 
     @patch("truefan.daemon.available_backends")
+    def test_stall_sends_100_duty_metric(self, mock_avail, tmp_path: Path) -> None:
+        """A fan stall sends a 100% duty metric to statsd for the affected zone."""
+        from truefan.sensors import SensorReading
+        cfg = tmp_path / "truefan.toml"
+        _write_config(cfg)
+        sim = _make_sim(stall_below=999)  # all fans stall
+
+        readings = [SensorReading(
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+        )]
+        mock_avail.side_effect = _mock_backends_factory(readings)
+
+        with patch("truefan.daemon.send_zone_duty") as mock_metric:
+            run(cfg, conn=sim, sleep=_StopAfter(1))
+            # Stall detection should have sent 100% for each stalled zone,
+            # in addition to the normal loop sends and the shutdown sends.
+            stall_calls = [c for c in mock_metric.call_args_list if c[0] == ("cpu", 100)]
+            assert len(stall_calls) >= 1
+
+    @patch("truefan.daemon.available_backends")
+    def test_shutdown_sends_100_duty_metric(self, mock_avail, tmp_path: Path) -> None:
+        """Shutdown sends a 100% duty metric to statsd for every zone."""
+        from truefan.sensors import SensorReading
+        cfg = tmp_path / "truefan.toml"
+        _write_config(cfg)
+        sim = _make_sim()
+
+        readings = [SensorReading(
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+        )]
+        mock_avail.side_effect = _mock_backends_factory(readings)
+
+        with patch("truefan.daemon.send_zone_duty") as mock_metric:
+            run(cfg, conn=sim, sleep=_StopAfter(1))
+            # The last two calls should be 100% for both zones (shutdown).
+            calls = mock_metric.call_args_list
+            shutdown_calls = {c[0][0] for c in calls if c[0][1] == 100}
+            assert "cpu" in shutdown_calls
+            assert "peripheral" in shutdown_calls
+
+    @patch("truefan.daemon.available_backends")
     def test_spindown_window_prevents_immediate_decrease(self, mock_avail, tmp_path: Path) -> None:
         """Fan duty doesn't drop immediately when demand decreases."""
         from truefan.sensors import SensorReading
