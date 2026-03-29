@@ -59,6 +59,7 @@ def main(argv: list[str] | None = None) -> None:
                     parents=[config_parent, foreground_parent])
     sub.add_parser("reload", help="Send SIGHUP to the running daemon to reload config",
                     parents=[config_parent])
+    sub.add_parser("status", help="Check whether the daemon is running")
     sub.add_parser("logs", help="Show daemon logs (args forwarded to journalctl)")
     # Diagnostics.
     sub.add_parser("sensors", help="Show all detected temperature and fan sensors")
@@ -132,6 +133,9 @@ def _dispatch(args: argparse.Namespace) -> None:
             pass  # No daemon running — proceed to start.
         from truefan.commands.start import run_start
         run_start(args.config, pid_path=PID_PATH, foreground=args.foreground)
+    elif args.command == "status":
+        from truefan.commands.status import run_status
+        run_status(PID_PATH)
     elif args.command == "recalibrate":
         from truefan.commands.recalibrate import run_recalibrate
         run_recalibrate(args.config, pid_path=PID_PATH)

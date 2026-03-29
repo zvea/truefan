@@ -217,6 +217,7 @@ To get proper chart names and units in Netdata, install `netdata/truefan.conf` i
 - **`truefan stop`** — stop the running daemon by sending SIGTERM and waiting for it to exit.
 - **`truefan restart [--foreground] [--config PATH]`** — stop the running daemon (if any), then start it again. Equivalent to `truefan stop` followed by `truefan start`.
 - **`truefan reload [--config PATH]`** — validate the config against live hardware, then send SIGHUP to the running daemon. Refuses to reload if the config is broken or doesn't match hardware.
+- **`truefan status`** — check whether the daemon is running. Prints the PID if running, or "not running" if not. Exits 0 if running, 1 if not.
 - **`truefan sensors`** — show all detected temperature and fan RPM sensors with current readings, classifications, and hardware thresholds. Useful for verifying what the daemon sees before running it.
 - **`truefan check [--syntax-only]`** — validate the config and print the result. With `--syntax-only`, checks only parsing without contacting hardware. Exits 0 on success, 1 on failure.
 - **`truefan logs [JOURNALCTL_ARGS...]`** — show daemon logs via `journalctl -t truefan`. All arguments are forwarded verbatim to journalctl (e.g. `truefan logs -f` to follow, `truefan logs -n 50` for last 50 lines). With no extra arguments, shows all available logs.
