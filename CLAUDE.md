@@ -42,7 +42,9 @@ Check with `pytest --cov --cov-report=term-missing`. Fill gaps that have a clear
 
 ## Changelog
 
-Never retroactively edit past changelog entries. They describe what was true at the time of that release.
+**Audience is the user, not the developer.** Describe what changed in behavior, not in code. Lead with breaking changes and what the user must do. Mention new features and improvements the user can observe. Skip internal-only changes (test refactors, renames, docstring fixes).
+
+Never retroactively edit past entries. They describe what was true at the time of that release.
 
 ## Git
 
