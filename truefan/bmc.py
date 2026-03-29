@@ -169,7 +169,9 @@ class IpmitoolConnection(BmcConnection):
         for row in csv.reader(io.StringIO(output)):
             if len(row) < 4:
                 continue
-            name = row[0]
+            name = row[0].strip()
+            if not name:
+                continue
             status = row[3]
             temp: float | None = None
             unc: float | None = None

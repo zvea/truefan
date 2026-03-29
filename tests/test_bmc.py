@@ -172,6 +172,19 @@ class TestListTemperatureSensors:
         assert pch.upper_non_critical == 84.0
         assert pch.upper_critical == 105.0
 
+    @patch("truefan.bmc.subprocess.run")
+    def test_skips_empty_sensor_name(self, mock_run) -> None:  # noqa: ANN001
+        """Rows with an empty sensor name are skipped."""
+        csv_with_empty = (
+            ",42,degrees C,ok,7.5,System Board,Temperature,20.000,11.000,79.000,90.000\n"
+            "CPU Temp,31,degrees C,ok,3.1,Processor,Temperature,20.000,11.000,80.000,100.000\n"
+        )
+        mock_run.return_value = _make_result(csv_with_empty)
+        conn = IpmitoolConnection()
+        temps = conn.list_temperature_sensors()
+        names = [s.name for s in temps]
+        assert names == ["CPU Temp"]
+
 
 # ---------------------------------------------------------------------------
 # #### IpmitoolConnection.raw_command
