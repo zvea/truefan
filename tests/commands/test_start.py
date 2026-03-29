@@ -22,7 +22,7 @@ def _write_valid_config(path: Path) -> None:
         poll_interval_seconds=5,
         curves=MappingProxyType({
             SensorClass.CPU: Curve(
-                temp_low=30, temp_high=80, duty_low=20, duty_high=100,
+                no_cooling_temp=30, max_cooling_temp=80,
                 fan_zones=frozenset({"cpu", "peripheral"}),
             ),
         }),

@@ -20,7 +20,7 @@ def _write_initial_config(path: Path) -> None:
         poll_interval_seconds=5,
         curves=MappingProxyType({
             SensorClass.CPU: Curve(
-                temp_low=35, temp_high=80, duty_low=25, duty_high=100,
+                no_cooling_temp=35, max_cooling_temp=80,
                 fan_zones=frozenset({"cpu", "peripheral"}),
             ),
         }),
@@ -80,7 +80,7 @@ class TestRunRecalibrate:
         run_recalibrate(cfg, conn=_make_sim(), sleep=noop_sleep)
         config = load_config(cfg)
         assert SensorClass.CPU in config.curves
-        assert config.curves[SensorClass.CPU].temp_low == 35
+        assert config.curves[SensorClass.CPU].no_cooling_temp == 35
 
     @patch("truefan.commands.check_ipmi_access", return_value=None)
     def test_preserves_poll_interval(self, mock_ipmi, tmp_path: Path) -> None:  # noqa: ANN001

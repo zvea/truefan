@@ -5,7 +5,7 @@ TrueFan is a fan control daemon for TrueNAS SCALE systems based on Supermicro X1
 ## Goals
 
 - **Minimize noise** while staying within safe thermal limits.
-- **Auto-detect** sensors and fans. Classify by class (cpu, drive, nvme, ambient, other) and apply sensible default curves. Use hardware-reported thermal limits when available.
+- **Auto-detect** sensors and fans. Classify by class (cpu, drive, nvme, ambient, other) and apply sensible default thermal thresholds. Use hardware-reported thermal limits when available.
 - **Read multiple sensor backends** — IPMI for board-level sensors, SMART for SATA/SAS drives, `nvme-cli` for NVMe, lm-sensors for the rest. Auto-detected based on what's available.
 - **Self-calibrate** how slow each fan can go without stalling, can be recalibrated as fans age or collect dust.
 - **Fail safe** — go to 100% on crash, total sensor class failure, or stalled fan.
@@ -34,9 +34,9 @@ A PID file (`/var/run/truefan.pid`) with OS-level `flock` prevents multiple inst
 Runs every `poll_interval_seconds` (default 15):
 
 1. Read all sensors from every available backend.
-2. Compute each sensor's demanded duty via its class's interpolation curve.
+2. Compute each sensor's demanded duty (0–100%) via its class's interpolation curve.
 3. For each fan zone, take the max demand across all sensors mapped to it.
-4. Snap to the nearest setpoint, considering all fans in the zone.
+4. Snap to the nearest calibrated setpoint, considering all fans in the zone.
 5. Apply spindown window: the actual duty is the max of all duties computed in the last `spindown_window_seconds` (default 180). Spin-up is instant; spin-down waits for the window to clear.
 6. Apply via IPMI (only if changed since last cycle).
 7. Read fan RPMs. On stall: set zone to 100%, try to restart, remove the lowest setpoint for that fan, persist to config.
@@ -51,7 +51,7 @@ Each backend scans for available sensors and returns readings every poll cycle. 
 - **NVMe** — NVMe temps via `nvme smart-log -o json`.
 - **lm-sensors** — everything else the kernel exposes, via `sensors -j`.
 
-Each sensor is classified into a **sensor class** (cpu, ambient, drive, nvme, other). Curves are per class. If a sensor reports a `temp_max` from the hardware, it overrides the curve's `temp_high` for that sensor.
+Each sensor is classified into a **sensor class** (cpu, ambient, drive, nvme, other). Thermal thresholds are per class. If a sensor reports a `temp_max` from the hardware, it overrides `max_cooling_temp` for that sensor.
 
 ### Fan control
 
@@ -59,9 +59,14 @@ On startup the daemon resets BMC fan sensor thresholds (to prevent the BMC from 
 
 ### Control algorithm
 
-Each sensor class has an interpolation curve: `temp_low`, `temp_high`, `duty_low`, `duty_high`. If a sensor reports a hardware `temp_max`, it overrides `temp_high` for that sensor. Between the two temps, duty is linearly interpolated. Below `temp_low` → `duty_low`. Above `temp_high` → `duty_high` (typically 100%). The resulting duty is then snapped to the nearest available setpoint for the fan.
+Each sensor class has an interpolation curve defined by two temperatures and the fan zones it drives:
 
-Individual sensors can override any curve parameter via `[curves.sensor.<name>]` sections in the config. This is useful for components that run hotter than others in the same class (e.g. a NIC at 60°C idle vs DIMMs at 35°C, both classified as `other`). Unspecified fields inherit from the class curve.
+- **`no_cooling_temp`** — the temperature below which the component does not need active cooling. At or below this point, the sensor demands 0% duty.
+- **`max_cooling_temp`** — the temperature at which maximum cooling is needed. At or above this point, the sensor demands 100% duty.
+
+Between the two temperatures, duty is linearly interpolated (0–100%). If a sensor reports a hardware `temp_max`, it overrides `max_cooling_temp` for that sensor. The resulting 0–100% duty is then snapped to the nearest calibrated setpoint for the fan — this is what clamps the effective minimum to whatever the fan can physically sustain.
+
+Individual sensors can override curve temperatures via `[thermal.sensor.<name>]` sections in the config. This is useful for components that run hotter than others in the same class (e.g. a NIC at 60°C idle vs DIMMs at 35°C, both classified as `other`). Unspecified fields inherit from the class curve.
 
 Each curve feeds one or more fan zones. Per zone, the highest demand wins.
 
@@ -93,40 +98,36 @@ Parsing checks:
 
 - Missing or malformed TOML.
 - Unrecognized top-level config keys (catches typos like `[fnas]` instead of `[fans]`).
-- Invalid values (unknown sensor class, temp_low > temp_high).
+- Invalid values (unknown sensor class, no_cooling_temp > max_cooling_temp).
 
 Hardware checks:
 
 - **Fan mismatch.** The set of fans in the config must exactly match the set of active fans detected via IPMI. Fans in the config but missing from hardware, fans present in hardware but missing from the config, and zone disagreements are all errors.
-- **Sensor override targets.** Every sensor named in a `[curves.sensor.*]` override must exist in the current sensor readings.
+- **Sensor override targets.** Every sensor named in a `[thermal.sensor.*]` override must exist in the current sensor readings.
 
 ```toml
 # Run `truefan reload` to validate and reload this file.
 poll_interval_seconds = 15
 spindown_window_seconds = 180
 
-# Curves map sensor temps to fan duty cycles, one per sensor class.
+# Thermal thresholds per sensor class — map temps to fan duty cycles.
 # Written by init for detected sensor classes. Example:
 #
-# [curves.<class>]
-# temp_low = 35      # °C — below this, fans run at duty_low
-# temp_high = 80     # °C — above this, fans run at duty_high
-# duty_low = 25      # % — minimum demanded duty (snapped to nearest setpoint)
-# duty_high = 100    # % — maximum demanded duty
+# [thermal.class.<class>]
+# no_cooling_temp = 35   # °C — below this, no active cooling needed (0% duty)
+# max_cooling_temp = 80  # °C — at or above this, maximum cooling (100% duty)
 # fan_zones = ["cpu", "peripheral"]
 
-[curves.drive]
-temp_low = 30
-temp_high = 45
-duty_low = 25
-duty_high = 100
+[thermal.class.drive]
+no_cooling_temp = 30
+max_cooling_temp = 45
 fan_zones = ["peripheral"]
 
 # Per-sensor overrides — only the fields you want to change.
 # Useful for components that run hotter than others in their class.
-[curves.sensor.lmsensors_mlx5_pci_0200_sensor0]
-temp_low = 60
-temp_high = 95
+[thermal.sensor.lmsensors_mlx5_pci_0200_sensor0]
+no_cooling_temp = 60
+max_cooling_temp = 95
 
 # Learned via calibration — duty % = expected RPM.
 # The daemon also removes the lowest setpoint on stall.
@@ -194,7 +195,7 @@ The daemon pushes metrics to Netdata's statsd listener over UDP.
 | Metric | Type | Meaning |
 |---|---|---|
 | `truefan.fan.<name>.target_rpm` | gauge | Expected RPM from the setpoint table at the current duty. Compare against actual RPM to spot anomalies. |
-| `truefan.sensor.<name>.thermal_load` | gauge | How far each sensor is between its temp_low and temp_high (0-100%). |
+| `truefan.sensor.<name>.thermal_load` | gauge | How far each sensor is between its no_cooling_temp and max_cooling_temp (0-100%). |
 | `truefan.sensor.<name>.temperature` | gauge | Current reading in °C. |
 | `truefan.zone.<name>.duty` | gauge | Current duty cycle % for each fan zone. |
 | `truefan.daemon.uptime` | gauge | Seconds since the daemon started its main loop. Resets to zero on restart. |
@@ -213,7 +214,7 @@ Config files for Netdata live in `netdata/statsd.d/` (statsd app config) and `ne
 
 ## CLI
 
-- **`truefan init [--config PATH]`** — detect sensors and fans, run calibration (build setpoint tables), write a config with curves for detected sensor classes and calibrated fan setpoints. Refuses if the config already exists.
+- **`truefan init [--config PATH]`** — detect sensors and fans, run calibration (build setpoint tables), write a config with thermal thresholds for detected sensor classes and calibrated fan setpoints. Refuses if the config already exists.
 - **`truefan recalibrate [--config PATH]`** — re-run calibration on an existing config. Rebuilds setpoint tables in place and exits.
 - **`truefan start [--foreground] [--config PATH]`** — daemonize and start the fan control daemon (wrapped by the watchdog). Prints the daemon PID and returns immediately. With `--foreground`, runs in the foreground with logging to stderr instead of syslog. Refuses if no config exists, pointing you to `truefan init`.
 - **`truefan stop`** — stop the running daemon by sending SIGTERM and waiting for it to exit.

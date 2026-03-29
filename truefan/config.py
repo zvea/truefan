@@ -23,34 +23,36 @@ DEFAULT_SPINDOWN_WINDOW_SECONDS: Final[int] = 180
 
 @dataclass(frozen=True, kw_only=True)
 class Curve:
-    """Interpolation curve mapping a sensor class's temperature range to duty cycle range."""
+    """Interpolation curve mapping a temperature range to 0-100% duty.
 
-    temp_low: int
-    temp_high: int
-    duty_low: int
-    duty_high: int
+    no_cooling_temp: below this, the component needs no active cooling (0% duty).
+    max_cooling_temp: at or above this, maximum cooling is needed (100% duty).
+    """
+
+    no_cooling_temp: int
+    max_cooling_temp: int
     fan_zones: frozenset[str]
 
 
 DEFAULT_CURVES: Final[MappingProxyType[SensorClass, Curve]] = MappingProxyType({
     SensorClass.CPU: Curve(
-        temp_low=35, temp_high=80, duty_low=25, duty_high=100,
+        no_cooling_temp=35, max_cooling_temp=80,
         fan_zones=frozenset({"cpu", "peripheral"}),
     ),
     SensorClass.AMBIENT: Curve(
-        temp_low=25, temp_high=40, duty_low=25, duty_high=100,
+        no_cooling_temp=25, max_cooling_temp=40,
         fan_zones=frozenset({"peripheral"}),
     ),
     SensorClass.DRIVE: Curve(
-        temp_low=30, temp_high=45, duty_low=25, duty_high=100,
+        no_cooling_temp=30, max_cooling_temp=45,
         fan_zones=frozenset({"peripheral"}),
     ),
     SensorClass.NVME: Curve(
-        temp_low=30, temp_high=70, duty_low=25, duty_high=100,
+        no_cooling_temp=30, max_cooling_temp=70,
         fan_zones=frozenset({"peripheral"}),
     ),
     SensorClass.OTHER: Curve(
-        temp_low=30, temp_high=80, duty_low=25, duty_high=100,
+        no_cooling_temp=30, max_cooling_temp=80,
         fan_zones=frozenset({"peripheral"}),
     ),
 })
@@ -60,10 +62,8 @@ DEFAULT_CURVES: Final[MappingProxyType[SensorClass, Curve]] = MappingProxyType({
 class SensorOverride:
     """Per-sensor curve override. None fields inherit from the class curve."""
 
-    temp_low: int | None = None
-    temp_high: int | None = None
-    duty_low: int | None = None
-    duty_high: int | None = None
+    no_cooling_temp: int | None = None
+    max_cooling_temp: int | None = None
     fan_zones: frozenset[str] | None = None
 
 
@@ -100,55 +100,48 @@ def _parse_int(section: str, key: str, value: object) -> int:
         raise ConfigError(f"{section} {key} must be an integer, got {value!r}")
 
 
-_CURVE_REQUIRED_KEYS: frozenset[str] = frozenset({
-    "temp_low", "temp_high", "duty_low", "duty_high", "fan_zones",
+_CURVE_REQUIRED_KEYS: Final[frozenset[str]] = frozenset({
+    "no_cooling_temp", "max_cooling_temp", "fan_zones",
 })
 
 
 def _parse_curve(name: str, table: dict) -> tuple[SensorClass, Curve]:
-    """Parse a curve section from TOML into a SensorClass and Curve."""
+    """Parse a thermal class section from TOML into a SensorClass and Curve."""
     try:
         sensor_class = SensorClass(name)
     except ValueError:
         raise ConfigError(f"Unknown sensor class: {name!r}")
+    section = f"[thermal.class.{name}]"
     missing = _CURVE_REQUIRED_KEYS - set(table)
     if missing:
         raise ConfigError(
-            f"[curves.{name}] missing required keys: {', '.join(sorted(missing))}"
+            f"{section} missing required keys: {', '.join(sorted(missing))}"
         )
     unknown = set(table) - _CURVE_REQUIRED_KEYS
     if unknown:
         raise ConfigError(
-            f"[curves.{name}] unrecognized keys: {', '.join(sorted(unknown))}"
+            f"{section} unrecognized keys: {', '.join(sorted(unknown))}"
         )
-    temp_low = _parse_int(f"[curves.{name}]", "temp_low", table["temp_low"])
-    temp_high = _parse_int(f"[curves.{name}]", "temp_high", table["temp_high"])
-    if temp_low > temp_high:
+    no_cooling_temp = _parse_int(section, "no_cooling_temp", table["no_cooling_temp"])
+    max_cooling_temp = _parse_int(section, "max_cooling_temp", table["max_cooling_temp"])
+    if no_cooling_temp > max_cooling_temp:
         raise ConfigError(
-            f"[curves.{name}]: temp_low ({temp_low}) > temp_high ({temp_high})"
+            f"{section}: no_cooling_temp ({no_cooling_temp}) > max_cooling_temp ({max_cooling_temp})"
         )
-    duty_low = _parse_int(f"[curves.{name}]", "duty_low", table["duty_low"])
-    duty_high = _parse_int(f"[curves.{name}]", "duty_high", table["duty_high"])
-    if not 0 <= duty_low <= 100:
-        raise ConfigError(f"[curves.{name}] duty_low must be 0-100, got {duty_low}")
-    if not 0 <= duty_high <= 100:
-        raise ConfigError(f"[curves.{name}] duty_high must be 0-100, got {duty_high}")
     fan_zones = table["fan_zones"]
     if isinstance(fan_zones, str):
         raise ConfigError(
-            f"[curves.{name}] fan_zones must be a list, not a string"
+            f"{section} fan_zones must be a list, not a string"
         )
     return sensor_class, Curve(
-        temp_low=temp_low,
-        temp_high=temp_high,
-        duty_low=duty_low,
-        duty_high=duty_high,
+        no_cooling_temp=no_cooling_temp,
+        max_cooling_temp=max_cooling_temp,
         fan_zones=frozenset(fan_zones),
     )
 
 
-_SENSOR_OVERRIDE_KEYS: frozenset[str] = frozenset({
-    "temp_low", "temp_high", "duty_low", "duty_high", "fan_zones",
+_SENSOR_OVERRIDE_KEYS: Final[frozenset[str]] = frozenset({
+    "no_cooling_temp", "max_cooling_temp", "fan_zones",
 })
 
 
@@ -157,19 +150,17 @@ def _parse_sensor_override(name: str, table: dict) -> SensorOverride:
     unknown = set(table) - _SENSOR_OVERRIDE_KEYS
     if unknown:
         raise ConfigError(
-            f"[curves.sensor.{name}] unrecognized keys: {', '.join(sorted(unknown))}"
+            f"[thermal.sensor.{name}] unrecognized keys: {', '.join(sorted(unknown))}"
         )
-    section = f"[curves.sensor.{name}]"
+    section = f"[thermal.sensor.{name}]"
     fan_zones = None
     if "fan_zones" in table:
         if isinstance(table["fan_zones"], str):
             raise ConfigError(f"{section} fan_zones must be a list, not a string")
         fan_zones = frozenset(table["fan_zones"])
     return SensorOverride(
-        temp_low=_parse_int(section, "temp_low", table["temp_low"]) if "temp_low" in table else None,
-        temp_high=_parse_int(section, "temp_high", table["temp_high"]) if "temp_high" in table else None,
-        duty_low=_parse_int(section, "duty_low", table["duty_low"]) if "duty_low" in table else None,
-        duty_high=_parse_int(section, "duty_high", table["duty_high"]) if "duty_high" in table else None,
+        no_cooling_temp=_parse_int(section, "no_cooling_temp", table["no_cooling_temp"]) if "no_cooling_temp" in table else None,
+        max_cooling_temp=_parse_int(section, "max_cooling_temp", table["max_cooling_temp"]) if "max_cooling_temp" in table else None,
         fan_zones=fan_zones,
     )
 
@@ -200,10 +191,7 @@ def _parse_fan(name: str, table: dict) -> FanConfig:
 
 
 def load_config(path: Path) -> Config:
-    """Read and parse the TOML config file.
-
-    Merges user-specified curve overrides with DEFAULT_CURVES.
-    """
+    """Read and parse the TOML config file."""
     try:
         text = path.read_text()
     except FileNotFoundError:
@@ -223,7 +211,7 @@ def load_config(path: Path) -> Config:
         raise ConfigError(f"Malformed TOML in {path}: {e}{context}")
 
     _KNOWN_KEYS: set[str] = {
-        "poll_interval_seconds", "spindown_window_seconds", "curves", "fans",
+        "poll_interval_seconds", "spindown_window_seconds", "thermal", "fans",
     }
     unknown = sorted(k for k in doc if k not in _KNOWN_KEYS)
     if unknown:
@@ -236,19 +224,18 @@ def load_config(path: Path) -> Config:
 
     curves: dict[SensorClass, Curve] = {}
     sensor_overrides: dict[str, SensorOverride] = {}
-    for name, table in doc.get("curves", {}).items():
-        if name == "sensor":
-            for sensor_name, override_table in table.items():
-                sensor_overrides[sensor_name] = _parse_sensor_override(sensor_name, override_table)
-        else:
-            sensor_class, curve = _parse_curve(name, table)
-            curves[sensor_class] = curve
+    thermal = doc.get("thermal", {})
+    for name, table in thermal.get("class", {}).items():
+        sensor_class, curve = _parse_curve(name, table)
+        curves[sensor_class] = curve
+    for sensor_name, override_table in thermal.get("sensor", {}).items():
+        sensor_overrides[sensor_name] = _parse_sensor_override(sensor_name, override_table)
 
     fans: dict[str, FanConfig] = {}
     for name, table in doc.get("fans", {}).items():
         fans[name] = _parse_fan(name, table)
 
-    # Cross-validate zone names between curves and fans.
+    # Cross-validate zone names between thermal classes and fans.
     if curves and fans:
         curve_zones: set[str] = set()
         for curve in curves.values():
@@ -256,11 +243,11 @@ def load_config(path: Path) -> Config:
         fan_zones: set[str] = {fc.zone for fc in fans.values()}
         for zone in sorted(curve_zones - fan_zones):
             raise ConfigError(
-                f"Zone {zone!r} is referenced by a curve but no fan is assigned to it"
+                f"Zone {zone!r} is referenced by a thermal class but no fan is assigned to it"
             )
         for zone in sorted(fan_zones - curve_zones):
             raise ConfigError(
-                f"Zone {zone!r} has fans but no curve drives it"
+                f"Zone {zone!r} has fans but no thermal class drives it"
             )
 
     return Config(
@@ -283,30 +270,33 @@ def save_config(path: Path, config: Config) -> None:
     doc["poll_interval_seconds"] = config.poll_interval_seconds
     doc["spindown_window_seconds"] = config.spindown_window_seconds
 
-    # Write curves.
+    # Write thermal class sections.
     if config.curves:
-        curves_in_doc = doc.get("curves")
-        if curves_in_doc is None:
-            curves_in_doc = tomlkit.table(is_super_table=True)
-            doc["curves"] = curves_in_doc
-        for cls, curve in config.curves.items():
-            curve_table = curves_in_doc.get(cls.value)
+        thermal_in_doc = doc.get("thermal")
+        if thermal_in_doc is None:
+            thermal_in_doc = tomlkit.table(is_super_table=True)
+            doc["thermal"] = thermal_in_doc
+        class_in_doc = thermal_in_doc.get("class")
+        if class_in_doc is None:
+            class_in_doc = tomlkit.table(is_super_table=True)
+            thermal_in_doc["class"] = class_in_doc
+        for cls in sorted(config.curves, key=lambda c: c.value):
+            curve = config.curves[cls]
+            curve_table = class_in_doc.get(cls.value)
             if curve_table is None:
                 curve_table = tomlkit.table()
-                curves_in_doc[cls.value] = curve_table
-            curve_table["temp_low"] = curve.temp_low
-            curve_table["temp_high"] = curve.temp_high
-            curve_table["duty_low"] = curve.duty_low
-            curve_table["duty_high"] = curve.duty_high
+                class_in_doc[cls.value] = curve_table
+            curve_table["no_cooling_temp"] = curve.no_cooling_temp
+            curve_table["max_cooling_temp"] = curve.max_cooling_temp
             curve_table["fan_zones"] = sorted(curve.fan_zones)
-        # Remove curves no longer in config.
-        for name in list(curves_in_doc):
+        # Remove classes no longer in config.
+        for name in list(class_in_doc):
             try:
                 SensorClass(name)
             except ValueError:
                 continue
             if SensorClass(name) not in config.curves:
-                del curves_in_doc[name]
+                del class_in_doc[name]
 
     fans_in_doc = doc.get("fans")
     if fans_in_doc is None:

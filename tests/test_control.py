@@ -18,17 +18,13 @@ from truefan.sensors import SensorClass, SensorReading
 # ---------------------------------------------------------------------------
 
 def _curve(
-    temp_low: int = 30,
-    temp_high: int = 50,
-    duty_low: int = 20,
-    duty_high: int = 100,
+    no_cooling_temp: int = 30,
+    max_cooling_temp: int = 50,
     fan_zones: frozenset[str] = frozenset({"peripheral"}),
 ) -> Curve:
     return Curve(
-        temp_low=temp_low,
-        temp_high=temp_high,
-        duty_low=duty_low,
-        duty_high=duty_high,
+        no_cooling_temp=no_cooling_temp,
+        max_cooling_temp=max_cooling_temp,
         fan_zones=fan_zones,
     )
 
@@ -57,46 +53,40 @@ def _fan_config(
 class TestInterpolateDuty:
     """Tests for interpolate_duty."""
 
-    def test_at_temp_low(self) -> None:
-        """At temp_low, returns duty_low."""
-        curve = _curve(temp_low=30, temp_high=50, duty_low=20, duty_high=100)
-        assert interpolate_duty(curve, 30.0) == 20.0
+    def test_at_no_cooling_temp(self) -> None:
+        """At no_cooling_temp, returns 0%."""
+        assert interpolate_duty(_curve(), 30.0) == 0.0
 
-    def test_at_temp_high(self) -> None:
-        """At temp_high, returns duty_high."""
-        curve = _curve(temp_low=30, temp_high=50, duty_low=20, duty_high=100)
-        assert interpolate_duty(curve, 50.0) == 100.0
+    def test_at_max_cooling_temp(self) -> None:
+        """At max_cooling_temp, returns 100%."""
+        assert interpolate_duty(_curve(), 50.0) == 100.0
 
     def test_midpoint(self) -> None:
-        """Midpoint temperature returns midpoint duty."""
-        curve = _curve(temp_low=30, temp_high=50, duty_low=20, duty_high=100)
-        assert interpolate_duty(curve, 40.0) == 60.0
+        """Midpoint temperature returns 50%."""
+        assert interpolate_duty(_curve(), 40.0) == 50.0
 
-    def test_below_temp_low(self) -> None:
-        """Below temp_low, clamps to duty_low."""
-        curve = _curve(temp_low=30, temp_high=50, duty_low=20, duty_high=100)
-        assert interpolate_duty(curve, 10.0) == 20.0
+    def test_below_no_cooling_temp(self) -> None:
+        """Below no_cooling_temp, clamps to 0%."""
+        assert interpolate_duty(_curve(), 10.0) == 0.0
 
-    def test_above_temp_high(self) -> None:
-        """Above temp_high, clamps to duty_high."""
-        curve = _curve(temp_low=30, temp_high=50, duty_low=20, duty_high=100)
-        assert interpolate_duty(curve, 80.0) == 100.0
+    def test_above_max_cooling_temp(self) -> None:
+        """Above max_cooling_temp, clamps to 100%."""
+        assert interpolate_duty(_curve(), 80.0) == 100.0
 
     def test_degenerate_equal_temps(self) -> None:
-        """When temp_low == temp_high, returns duty_high."""
-        curve = _curve(temp_low=40, temp_high=40, duty_low=20, duty_high=100)
+        """When no_cooling_temp == max_cooling_temp, returns 100%."""
+        curve = _curve(no_cooling_temp=40, max_cooling_temp=40)
         assert interpolate_duty(curve, 40.0) == 100.0
 
-    def test_temp_high_override(self) -> None:
-        """Hardware-reported temp_max overrides the curve's temp_high."""
-        curve = _curve(temp_low=30, temp_high=80, duty_low=20, duty_high=100)
-        # With override of 50, midpoint at 40 should give 60% (not 28%)
-        assert interpolate_duty(curve, 40.0, temp_high_override=50.0) == 60.0
+    def test_max_cooling_temp_override(self) -> None:
+        """Hardware-reported temp_max overrides the curve's max_cooling_temp."""
+        curve = _curve(no_cooling_temp=30, max_cooling_temp=80)
+        # With override of 50, midpoint at 40 should give 50%
+        assert interpolate_duty(curve, 40.0, max_cooling_temp_override=50.0) == 50.0
 
-    def test_temp_high_override_none_uses_curve(self) -> None:
-        """None override uses the curve's temp_high."""
-        curve = _curve(temp_low=30, temp_high=50, duty_low=20, duty_high=100)
-        assert interpolate_duty(curve, 40.0, temp_high_override=None) == 60.0
+    def test_max_cooling_temp_override_none_uses_curve(self) -> None:
+        """None override uses the curve's max_cooling_temp."""
+        assert interpolate_duty(_curve(), 40.0, max_cooling_temp_override=None) == 50.0
 
 
 # ---------------------------------------------------------------------------
@@ -108,31 +98,28 @@ class TestComputeThermalLoad:
 
     def test_midpoint(self) -> None:
         """Midpoint temperature returns 50% load."""
-        curve = _curve(temp_low=30, temp_high=50)
         reading = SensorReading(
             name="s", sensor_class=SensorClass.DRIVE, temperature=40.0,
         )
-        assert compute_thermal_load(reading, curve) == 50.0
+        assert compute_thermal_load(reading, _curve()) == 50.0
 
-    def test_below_temp_low(self) -> None:
-        """Below temp_low clamps to 0%."""
-        curve = _curve(temp_low=30, temp_high=50)
+    def test_below_no_cooling_temp(self) -> None:
+        """Below no_cooling_temp clamps to 0%."""
         reading = SensorReading(
             name="s", sensor_class=SensorClass.DRIVE, temperature=20.0,
         )
-        assert compute_thermal_load(reading, curve) == 0.0
+        assert compute_thermal_load(reading, _curve()) == 0.0
 
-    def test_above_temp_high(self) -> None:
-        """Above temp_high clamps to 100%."""
-        curve = _curve(temp_low=30, temp_high=50)
+    def test_above_max_cooling_temp(self) -> None:
+        """Above max_cooling_temp clamps to 100%."""
         reading = SensorReading(
             name="s", sensor_class=SensorClass.DRIVE, temperature=60.0,
         )
-        assert compute_thermal_load(reading, curve) == 100.0
+        assert compute_thermal_load(reading, _curve()) == 100.0
 
     def test_degenerate_equal_temps(self) -> None:
-        """When temp_low == temp_high, returns 100%."""
-        curve = _curve(temp_low=40, temp_high=40)
+        """When no_cooling_temp == max_cooling_temp, returns 100%."""
+        curve = _curve(no_cooling_temp=40, max_cooling_temp=40)
         reading = SensorReading(
             name="s", sensor_class=SensorClass.DRIVE, temperature=40.0,
         )
@@ -140,8 +127,8 @@ class TestComputeThermalLoad:
 
     def test_override_changes_range(self) -> None:
         """Per-sensor override adjusts the effective temperature range."""
-        curve = _curve(temp_low=30, temp_high=80)
-        override = SensorOverride(temp_low=60, temp_high=95)
+        curve = _curve(no_cooling_temp=30, max_cooling_temp=80)
+        override = SensorOverride(no_cooling_temp=60, max_cooling_temp=95)
         reading = SensorReading(
             name="s", sensor_class=SensorClass.OTHER, temperature=67.0,
         )
@@ -151,8 +138,8 @@ class TestComputeThermalLoad:
         assert load_with < load_without
 
     def test_hardware_temp_max_overrides_curve(self) -> None:
-        """Hardware temp_max replaces temp_high when no override sets it."""
-        curve = _curve(temp_low=30, temp_high=80)
+        """Hardware temp_max replaces max_cooling_temp when no override sets it."""
+        curve = _curve(no_cooling_temp=30, max_cooling_temp=80)
         reading = SensorReading(
             name="s", sensor_class=SensorClass.OTHER,
             temperature=55.0, temp_max=105.0,
@@ -161,16 +148,16 @@ class TestComputeThermalLoad:
         # 55°C on 30-105 → 33.3%
         assert round(load, 1) == 33.3
 
-    def test_override_temp_high_beats_hardware_temp_max(self) -> None:
-        """When override sets temp_high, hardware temp_max is ignored."""
-        curve = _curve(temp_low=30, temp_high=80)
-        override = SensorOverride(temp_high=60)
+    def test_override_max_cooling_temp_beats_hardware_temp_max(self) -> None:
+        """When override sets max_cooling_temp, hardware temp_max is ignored."""
+        curve = _curve(no_cooling_temp=30, max_cooling_temp=80)
+        override = SensorOverride(max_cooling_temp=60)
         reading = SensorReading(
             name="s", sensor_class=SensorClass.OTHER,
             temperature=45.0, temp_max=105.0,
         )
         load = compute_thermal_load(reading, curve, override)
-        # 45°C on 30-60 → 50% (temp_max=105 ignored because override sets temp_high)
+        # 45°C on 30-60 → 50% (temp_max=105 ignored because override sets max_cooling_temp)
         assert load == 50.0
 
 
@@ -222,21 +209,21 @@ class TestComputeZoneDuties:
     def test_single_sensor_single_zone(self) -> None:
         """One sensor, one zone, one fan — straightforward demand."""
         curves = MappingProxyType({
-            SensorClass.DRIVE: _curve(temp_low=30, temp_high=50, duty_low=20, duty_high=100),
+            SensorClass.DRIVE: _curve(no_cooling_temp=30, max_cooling_temp=50),
         })
         fans = MappingProxyType({"FAN1": _fan_config(zone="peripheral")})
         readings = [_reading(temperature=40.0, sensor_class=SensorClass.DRIVE)]
 
         result = compute_zone_duties(readings, curves, fans)
-        # 40°C on 30-50 range, duty_low=20, duty_high=100 → duty=60, snap to 60
-        assert result["peripheral"].duty == 60
+        # 40°C on 30-50 range → 50% duty, snap to 40
+        assert result["peripheral"].duty == 40
         assert result["peripheral"].sensor_name == "sensor0"
         assert result["peripheral"].temperature == 40.0
 
     def test_max_temp_within_class(self) -> None:
         """Multiple sensors of same class — hottest one drives the zone."""
         curves = MappingProxyType({
-            SensorClass.DRIVE: _curve(temp_low=30, temp_high=50, duty_low=20, duty_high=100),
+            SensorClass.DRIVE: _curve(no_cooling_temp=30, max_cooling_temp=50),
         })
         fans = MappingProxyType({"FAN1": _fan_config(zone="peripheral")})
         readings = [
@@ -245,7 +232,7 @@ class TestComputeZoneDuties:
         ]
 
         result = compute_zone_duties(readings, curves, fans)
-        # 45°C → duty=80, snaps to 80. sdb is the hottest.
+        # sdb at 45°C → 75%, snaps to 80. sdb is the hottest.
         assert result["peripheral"].duty == 80
         assert result["peripheral"].sensor_name == "sdb"
 
@@ -253,28 +240,28 @@ class TestComputeZoneDuties:
         """Different sensor classes feeding the same zone — highest demand wins."""
         curves = MappingProxyType({
             SensorClass.DRIVE: _curve(
-                temp_low=30, temp_high=50, duty_low=20, duty_high=100,
+                no_cooling_temp=30, max_cooling_temp=50,
                 fan_zones=frozenset({"peripheral"}),
             ),
             SensorClass.AMBIENT: _curve(
-                temp_low=25, temp_high=40, duty_low=20, duty_high=100,
+                no_cooling_temp=25, max_cooling_temp=40,
                 fan_zones=frozenset({"peripheral"}),
             ),
         })
         fans = MappingProxyType({"FAN1": _fan_config(zone="peripheral")})
         readings = [
-            _reading(temperature=35.0, sensor_class=SensorClass.DRIVE),  # → duty 40
-            _reading(temperature=38.0, sensor_class=SensorClass.AMBIENT),  # → duty ~89
+            _reading(temperature=35.0, sensor_class=SensorClass.DRIVE),  # → 25%
+            _reading(temperature=38.0, sensor_class=SensorClass.AMBIENT),  # → ~86.7%
         ]
 
         result = compute_zone_duties(readings, curves, fans)
-        # Ambient demands ~89% — nearest setpoint is 80 (9.3 away vs 100 at 10.7)
+        # Ambient demands ~86.7% — nearest setpoint is 80
         assert result["peripheral"].duty == 80
 
     def test_sensor_class_without_curve_ignored(self) -> None:
         """Sensors with no matching curve are ignored."""
         curves = MappingProxyType({
-            SensorClass.DRIVE: _curve(temp_low=30, temp_high=50, duty_low=20, duty_high=100),
+            SensorClass.DRIVE: _curve(no_cooling_temp=30, max_cooling_temp=50),
         })
         fans = MappingProxyType({"FAN1": _fan_config(zone="peripheral")})
         readings = [
@@ -283,13 +270,14 @@ class TestComputeZoneDuties:
         ]
 
         result = compute_zone_duties(readings, curves, fans)
-        assert result["peripheral"].duty == 60
+        # Drive at 40°C → 50%, snap to 40 (nearest to 50 is 40 or 60, equidistant → 40 wins)
+        assert result["peripheral"].duty == 40
 
     def test_zone_with_no_sensors(self) -> None:
         """A fan zone with no sensors mapped to it is absent from the result."""
         curves = MappingProxyType({
             SensorClass.DRIVE: _curve(
-                temp_low=30, temp_high=50, duty_low=20, duty_high=100,
+                no_cooling_temp=30, max_cooling_temp=50,
                 fan_zones=frozenset({"peripheral"}),
             ),
         })
@@ -306,7 +294,7 @@ class TestComputeZoneDuties:
     def test_two_fans_same_zone_different_setpoints(self) -> None:
         """Two fans in the same zone with different setpoints — zone duty satisfies both."""
         curves = MappingProxyType({
-            SensorClass.DRIVE: _curve(temp_low=30, temp_high=50, duty_low=20, duty_high=100),
+            SensorClass.DRIVE: _curve(no_cooling_temp=30, max_cooling_temp=50),
         })
         fans = MappingProxyType({
             "FAN1": _fan_config(
@@ -322,22 +310,22 @@ class TestComputeZoneDuties:
         readings = [_reading(temperature=35.0, sensor_class=SensorClass.DRIVE)]
 
         result = compute_zone_duties(readings, curves, fans)
-        # Demanded duty = 40 (midpoint on 30-50, 20-100 range)
-        # FAN1 snaps to 40, FAN2 snaps to 40 — zone gets 40
+        # Demanded duty = 25% (midpoint on 30-50 → 25%)
+        # FAN1 snaps to 20, FAN2 snaps to 40 — zone gets max = 40
         assert result["peripheral"].duty == 40
 
     def test_sensor_temp_max_overrides_curve(self) -> None:
-        """A sensor's hardware temp_max overrides the curve's temp_high."""
+        """A sensor's hardware temp_max overrides the curve's max_cooling_temp."""
         curves = MappingProxyType({
             SensorClass.OTHER: _curve(
-                temp_low=30, temp_high=80, duty_low=20, duty_high=100,
+                no_cooling_temp=30, max_cooling_temp=80,
                 fan_zones=frozenset({"peripheral"}),
             ),
         })
         fans = MappingProxyType({"FAN1": _fan_config(zone="peripheral")})
         # Mellanox NIC at 58°C with hardware temp_max=105
-        # With curve temp_high=80: duty = 20 + (58-30)/(80-30) * 80 = 64.8 → snap 80
-        # With temp_max=105:       duty = 20 + (58-30)/(105-30) * 80 = 49.9 → snap 60
+        # With curve max_cooling_temp=80: duty = (58-30)/(80-30) * 100 = 56% → snap 60
+        # With temp_max=105:              duty = (58-30)/(105-30) * 100 = 37.3% → snap 40
         readings = [_reading(
             name="lmsensors_mlx5_pci_0200_sensor0",
             temperature=58.0,
@@ -359,7 +347,7 @@ class TestComputeZoneDuties:
         """A per-sensor override adjusts the curve for that sensor only."""
         curves = MappingProxyType({
             SensorClass.OTHER: _curve(
-                temp_low=30, temp_high=80, duty_low=20, duty_high=100,
+                no_cooling_temp=30, max_cooling_temp=80,
                 fan_zones=frozenset({"peripheral"}),
             ),
         })
@@ -371,15 +359,15 @@ class TestComputeZoneDuties:
             _reading(name="ipmi_PCH_Temp", temperature=67.0,
                      sensor_class=SensorClass.OTHER),
         ]
-        # Override only the NIC — raise temp_low so 67°C is barely above idle.
+        # Override only the NIC — raise no_cooling_temp so 67°C is barely above idle.
         overrides = MappingProxyType({
-            "lmsensors_mlx5_pci_0200_sensor0": SensorOverride(temp_low=60, temp_high=95),
+            "lmsensors_mlx5_pci_0200_sensor0": SensorOverride(no_cooling_temp=60, max_cooling_temp=95),
         })
         result_without = compute_zone_duties(readings, curves, fans)
         result_with = compute_zone_duties(readings, curves, fans, overrides)
         # With override, NIC demand is much lower; PCH still uses class curve.
-        # PCH at 67°C on 30-80 curve: 20 + 37/50*80 = 79.2 → snap 80
-        # NIC at 67°C on 60-95 curve: 20 + 7/35*80 = 36.0 → snap 40
+        # PCH at 67°C on 30-80 curve: (67-30)/(80-30)*100 = 74% → snap 80
+        # NIC at 67°C on 60-95 curve: (67-60)/(95-60)*100 = 20% → snap 20
         # Max is still PCH → same result as without override.
         assert result_with["peripheral"].duty == result_without["peripheral"].duty
 
@@ -387,7 +375,7 @@ class TestComputeZoneDuties:
         """Per-sensor override reduces demand when that sensor is the driver."""
         curves = MappingProxyType({
             SensorClass.OTHER: _curve(
-                temp_low=30, temp_high=80, duty_low=20, duty_high=100,
+                no_cooling_temp=30, max_cooling_temp=80,
                 fan_zones=frozenset({"peripheral"}),
             ),
         })
@@ -398,11 +386,11 @@ class TestComputeZoneDuties:
                      sensor_class=SensorClass.OTHER),
         ]
         overrides = MappingProxyType({
-            "lmsensors_mlx5_pci_0200_sensor0": SensorOverride(temp_low=60, temp_high=95),
+            "lmsensors_mlx5_pci_0200_sensor0": SensorOverride(no_cooling_temp=60, max_cooling_temp=95),
         })
         result_without = compute_zone_duties(readings, curves, fans)
         result_with = compute_zone_duties(readings, curves, fans, overrides)
-        # Without override: 67°C on 30-80 → ~79% → snap 80
-        # With override: 67°C on 60-95 → ~36% → snap 40
+        # Without override: 67°C on 30-80 → 74% → snap 80
+        # With override: 67°C on 60-95 → 20% → snap 20
         assert result_with["peripheral"].duty < result_without["peripheral"].duty
-        assert result_with["peripheral"].duty == 40
+        assert result_with["peripheral"].duty == 20

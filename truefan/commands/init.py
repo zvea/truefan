@@ -40,16 +40,16 @@ def _do_init(
 
     print("Detecting sensors...")
     backends = available_backends(conn)
-    detected_classes: set[SensorClass] = set()
+    class_counts: dict[SensorClass, int] = {}
     for backend in backends:
         for reading in backend.scan():
-            detected_classes.add(reading.sensor_class)
+            class_counts[reading.sensor_class] = class_counts.get(reading.sensor_class, 0) + 1
     curves: dict[SensorClass, Curve] = {
-        cls: DEFAULT_CURVES[cls] for cls in detected_classes if cls in DEFAULT_CURVES
+        cls: DEFAULT_CURVES[cls] for cls in class_counts if cls in DEFAULT_CURVES
     }
-    for cls in sorted(detected_classes, key=lambda c: c.value):
-        print(f"  {cls.value}")
-    if not detected_classes:
+    for cls in sorted(class_counts, key=lambda c: c.value):
+        print(f"  {cls.value} ({class_counts[cls]})")
+    if not class_counts:
         print("  (none)")
 
     print("Resetting BMC thresholds...")

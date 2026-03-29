@@ -33,7 +33,7 @@ class SensorReading:
     "ipmi_CPU_Temp", "smart_sda", "lmsensors_coretemp_isa_0000_Core_0".
     If the hardware reports thermal limits, temp_max and temp_crit
     carry those values. A sensor's temp_max overrides the curve's
-    temp_high when computing demanded duty.
+    max_cooling_temp when computing demanded duty.
     """
 
     name: str

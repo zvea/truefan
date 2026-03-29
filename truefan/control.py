@@ -23,25 +23,23 @@ class ZoneDuty:
 def interpolate_duty(
     curve: Curve,
     temperature: float,
-    temp_high_override: float | None = None,
+    max_cooling_temp_override: float | None = None,
 ) -> float:
-    """Compute demanded duty percentage for a temperature on a curve.
+    """Compute demanded duty (0-100%) for a temperature on a curve.
 
-    Linearly interpolates between temp_low and temp_high.
-    Clamps to duty_low below temp_low and duty_high above temp_high.
-    Returns duty_high when temp_low == temp_high (degenerate curve).
-    If temp_high_override is provided (e.g. from a sensor's hardware-reported
-    temp_max), it replaces the curve's temp_high.
+    Linearly interpolates between no_cooling_temp (0%) and max_cooling_temp (100%).
+    Returns 100% when no_cooling_temp == max_cooling_temp (degenerate curve).
+    If max_cooling_temp_override is provided (e.g. from a sensor's hardware-reported
+    temp_max), it replaces the curve's max_cooling_temp.
     """
-    temp_high = temp_high_override if temp_high_override is not None else curve.temp_high
-    if curve.temp_low == temp_high:
-        return float(curve.duty_high)
-    if temperature <= curve.temp_low:
-        return float(curve.duty_low)
-    if temperature >= temp_high:
-        return float(curve.duty_high)
-    fraction = (temperature - curve.temp_low) / (temp_high - curve.temp_low)
-    return curve.duty_low + fraction * (curve.duty_high - curve.duty_low)
+    max_cooling_temp = max_cooling_temp_override if max_cooling_temp_override is not None else curve.max_cooling_temp
+    if curve.no_cooling_temp == max_cooling_temp:
+        return 100.0
+    if temperature <= curve.no_cooling_temp:
+        return 0.0
+    if temperature >= max_cooling_temp:
+        return 100.0
+    return (temperature - curve.no_cooling_temp) / (max_cooling_temp - curve.no_cooling_temp) * 100.0
 
 
 def snap_duty_to_setpoint(duty: float, setpoints: MappingProxyType[int, int]) -> int:
@@ -56,10 +54,8 @@ def snap_duty_to_setpoint(duty: float, setpoints: MappingProxyType[int, int]) ->
 def _apply_override(curve: Curve, override: SensorOverride) -> Curve:
     """Return a new Curve with override fields applied."""
     return Curve(
-        temp_low=override.temp_low if override.temp_low is not None else curve.temp_low,
-        temp_high=override.temp_high if override.temp_high is not None else curve.temp_high,
-        duty_low=override.duty_low if override.duty_low is not None else curve.duty_low,
-        duty_high=override.duty_high if override.duty_high is not None else curve.duty_high,
+        no_cooling_temp=override.no_cooling_temp if override.no_cooling_temp is not None else curve.no_cooling_temp,
+        max_cooling_temp=override.max_cooling_temp if override.max_cooling_temp is not None else curve.max_cooling_temp,
         fan_zones=override.fan_zones if override.fan_zones is not None else curve.fan_zones,
     )
 
@@ -69,21 +65,17 @@ def compute_thermal_load(
     curve: Curve,
     override: SensorOverride | None = None,
 ) -> float:
-    """Compute how far a sensor is between its effective temp_low and temp_high (0-100%).
+    """Compute how far a sensor is between its effective temp range (0-100%).
 
-    Resolves per-sensor overrides and hardware temp_max using the same
-    precedence as compute_zone_duties: override fields replace curve fields,
-    and hardware temp_max replaces temp_high only when no override sets it.
+    Resolves per-sensor overrides and hardware temp_max, then delegates
+    to interpolate_duty. The result is also the demanded duty percentage.
     """
     if override is not None:
         curve = _apply_override(curve, override)
-    temp_low = curve.temp_low
-    temp_high = curve.temp_high
-    if reading.temp_max is not None and (override is None or override.temp_high is None):
-        temp_high = reading.temp_max
-    if temp_high == temp_low:
-        return 100.0
-    return max(0.0, min(100.0, (reading.temperature - temp_low) / (temp_high - temp_low) * 100))
+    max_cooling_temp_override = None
+    if reading.temp_max is not None and (override is None or override.max_cooling_temp is None):
+        max_cooling_temp_override = reading.temp_max
+    return interpolate_duty(curve, reading.temperature, max_cooling_temp_override)
 
 
 def compute_zone_duties(
@@ -94,11 +86,11 @@ def compute_zone_duties(
 ) -> dict[str, ZoneDuty]:
     """Resolve sensor readings into a duty percentage per fan zone.
 
-    For each sensor, computes demanded duty via its class's curve,
+    For each sensor, computes demanded duty (0-100%) via its class's curve,
     with optional per-sensor overrides. If the sensor reports a temp_max
-    and no override specifies temp_high, it overrides the curve's temp_high.
-    Groups demands by fan zone, takes the max per zone, then snaps
-    to the lowest setpoint that satisfies all fans in the zone.
+    and no override specifies max_cooling_temp, it overrides the curve's
+    max_cooling_temp. Groups demands by fan zone, takes the max per zone,
+    then snaps to the nearest setpoint that satisfies all fans in the zone.
     """
     # Track max demanded duty and which sensor caused it, per zone.
     zone_demands: dict[str, tuple[float, SensorReading]] = {}
@@ -109,11 +101,11 @@ def compute_zone_duties(
         override = (sensor_overrides or {}).get(reading.name)
         if override is not None:
             curve = _apply_override(curve, override)
-        # Hardware temp_max only applies if no override set temp_high.
-        temp_high_override = reading.temp_max
-        if override is not None and override.temp_high is not None:
-            temp_high_override = None  # override already baked into curve
-        duty = interpolate_duty(curve, reading.temperature, temp_high_override)
+        # Hardware temp_max only applies if no override set max_cooling_temp.
+        max_cooling_temp_override = reading.temp_max
+        if override is not None and override.max_cooling_temp is not None:
+            max_cooling_temp_override = None  # override already baked into curve
+        duty = interpolate_duty(curve, reading.temperature, max_cooling_temp_override)
         for zone in curve.fan_zones:
             if zone not in zone_demands or duty > zone_demands[zone][0]:
                 zone_demands[zone] = (duty, reading)

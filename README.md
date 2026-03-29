@@ -90,17 +90,15 @@ for details.
 poll_interval_seconds = 15
 spindown_window_seconds = 180
 
-[curves.drive]
-temp_low = 30
-temp_high = 45
-duty_low = 25
-duty_high = 100
+[thermal.class.drive]
+no_cooling_temp = 30
+max_cooling_temp = 45
 fan_zones = ["peripheral"]
 
 # Per-sensor overrides for components that run hotter than their class
-[curves.sensor.lmsensors_mlx5_pci_0200_sensor0]
-temp_low = 60
-temp_high = 95
+[thermal.sensor.lmsensors_mlx5_pci_0200_sensor0]
+no_cooling_temp = 60
+max_cooling_temp = 95
 
 # Learned via calibration — duty % = expected RPM
 [fans.FAN1]
@@ -133,10 +131,11 @@ it's running.
 
 ## How it works
 
-Each sensor class has a temperature-to-duty curve. Between `temp_low` and
-`temp_high`, duty is linearly interpolated; hardware-reported thermal limits
-override `temp_high` when available. The hottest sensor in each fan zone
-sets the duty. A spindown window prevents rapid cycling.
+Each sensor class has a temperature-to-duty curve. Between `no_cooling_temp`
+and `max_cooling_temp`, duty is linearly interpolated from 0% to 100%;
+hardware-reported thermal limits override `max_cooling_temp` when available.
+The hottest sensor in each fan zone sets the duty, which is then snapped to
+the nearest calibrated fan setpoint. A spindown window prevents rapid cycling.
 
 If a fan stalls, the zone goes to 100% and the lowest setpoint is removed
 so the minimum duty rises going forward.
