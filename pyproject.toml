@@ -11,7 +11,7 @@ license = "MIT"
 requires-python = ">=3.11"
 keywords = ["cooling", "daemon", "fan-control", "homelab", "ipmi", "monitoring", "server", "supermicro", "temperature", "thermal", "truenas"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: No Input/Output (Daemon)",
     "Intended Audience :: System Administrators",
     "Operating System :: POSIX :: Linux",
