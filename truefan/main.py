@@ -14,8 +14,19 @@ def _default_config_path() -> Path:
     return Path(__file__).parent.parent / DEFAULT_CONFIG_FILENAME
 
 
+_CONFIG_HELP: str = (
+    f"Path to config file (default: {DEFAULT_CONFIG_FILENAME} next to the script)"
+)
+
+
 def main(argv: list[str] | None = None) -> None:
-    """Parse CLI arguments and dispatch to a subcommand."""
+    """Parse CLI arguments and dispatch to a subcommand.
+
+    --config can appear before or after the subcommand name.
+    """
+    config_parent = argparse.ArgumentParser(add_help=False)
+    config_parent.add_argument("--config", type=Path, default=None, help=_CONFIG_HELP)
+
     parser = argparse.ArgumentParser(
         prog="truefan",
         description="Fan control daemon for TrueNAS SCALE.",
@@ -23,19 +34,21 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {version('truefan')}",
     )
-    parser.add_argument(
-        "--config", type=Path, default=_default_config_path(),
-        help=f"Path to config file (default: {DEFAULT_CONFIG_FILENAME} next to the script)",
-    )
+    parser.add_argument("--config", type=Path, default=None, help=_CONFIG_HELP)
 
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("init", help="Detect fans, calibrate, and generate a config file")
-    sub.add_parser("run", help="Start the fan control daemon")
-    sub.add_parser("recalibrate", help="Re-run fan calibration on an existing config")
+    sub.add_parser("init", help="Detect fans, calibrate, and generate a config file",
+                    parents=[config_parent])
+    sub.add_parser("run", help="Start the fan control daemon",
+                    parents=[config_parent])
+    sub.add_parser("recalibrate", help="Re-run fan calibration on an existing config",
+                    parents=[config_parent])
     sub.add_parser("sensors", help="Show all detected temperature and fan sensors")
-    sub.add_parser("reload", help="Send SIGHUP to the running daemon to reload config")
-    check_parser = sub.add_parser("check", help="Validate the config file")
+    sub.add_parser("reload", help="Send SIGHUP to the running daemon to reload config",
+                    parents=[config_parent])
+    check_parser = sub.add_parser("check", help="Validate the config file",
+                                  parents=[config_parent])
     check_parser.add_argument(
         "--syntax-only", action="store_true",
         help="Check only TOML syntax and structure, skip hardware checks",
@@ -46,6 +59,11 @@ def main(argv: list[str] | None = None) -> None:
     if args.command is None:
         parser.print_help()
         return
+
+    # Resolve --config: use the value from whichever position it was given,
+    # falling back to the default.
+    if args.config is None:
+        args.config = _default_config_path()
 
     try:
         _dispatch(args)
