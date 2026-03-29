@@ -40,6 +40,10 @@ Group tests by function under test using a `class TestFunctionName` with a `# ##
 
 Check with `pytest --cov --cov-report=term-missing`. Fill gaps that have a clear real-world trigger and test a meaningful contract. Skip defensive guards for impossible inputs and dunder methods. Do not target a percentage.
 
+## Changelog
+
+Never retroactively edit past changelog entries. They describe what was true at the time of that release.
+
 ## Git
 
 Do not commit unless the user explicitly asks you to.
