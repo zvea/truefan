@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2
+
+- **SIGUSR1 no longer kills the watchdog.** Previously, sending SIGUSR1 to dump state would kill the watchdog (unhandled signal), leaving the daemon child running unsupervised with a stale PID file. The watchdog now forwards SIGUSR1 to the child correctly.
+- **Clean shutdown on watchdog death.** If the watchdog dies unexpectedly, the daemon child now receives SIGTERM automatically and shuts down with fans at full speed. Previously the child would keep running without a safety net.
+- **PID file lock no longer leaks to child.** The daemon child no longer inherits the PID file lock. Previously, killing the watchdog left the lock held by the child, making `truefan stop` and `truefan start` unable to recover without manually finding and killing the child process.
+
 ## 1.2.1
 
 - **State dump via SIGUSR1.** Send `kill -USR1` to the daemon to log current sensor readings, thermal loads, and zone duties to syslog. Useful for debugging why fans are at a given speed without restarting.
