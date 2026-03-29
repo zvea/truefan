@@ -10,7 +10,7 @@ TrueFan is a fan control daemon for TrueNAS SCALE systems based on Supermicro X1
 - **Self-calibrate** how slow each fan can go without stalling, can be recalibrated as fans age or collect dust.
 - **Fail safe** — go to 100% on crash, total sensor class failure, or stalled fan.
 - **Keep a single config file** for user settings and daemon-learned state. Comments and formatting survive when the daemon writes back to it.
-- **Expose metrics** to Netdata over statsd — per-sensor thermal load, per-zone duty, per-fan target RPM, and daemon restart count.
+- **Expose metrics** to Netdata over statsd — per-sensor temperature and thermal load, per-zone duty, per-fan target RPM, daemon uptime, and restart count.
 
 ## Non-goals
 
@@ -40,7 +40,7 @@ Runs every `poll_interval_seconds` (default 15):
 5. Apply spindown window: the actual duty is the max of all duties computed in the last `spindown_window_seconds` (default 180). Spin-up is instant; spin-down waits for the window to clear.
 6. Apply via IPMI (only if changed since last cycle).
 7. Read fan RPMs. On stall: set zone to 100%, try to restart, remove the lowest setpoint for that fan, persist to config.
-8. Push metrics to Netdata via statsd (thermal load, zone duty, target RPM).
+8. Push metrics to Netdata via statsd (temperature, thermal load, zone duty, target RPM, uptime).
 
 ### Sensor backends
 
@@ -166,6 +166,7 @@ truefan/
         stop.py      # stop the running daemon
         # restart is dispatch logic in main.py (stop then start)
         recalibrate.py # re-run fan calibration
+        status.py    # check if the daemon is running
         sensors.py   # show all detected sensors
         reload.py    # validate config, then send SIGHUP to running daemon
         logs.py      # show daemon logs via journalctl

@@ -1,9 +1,9 @@
 # truefan
 
-Fan control daemon for TrueNAS SCALE systems on Supermicro X11 boards. Reads
-temperatures from IPMI, SMART, NVMe, and lm-sensors, then adjusts fan duty
-cycles via IPMI raw commands to keep things cool with minimal noise. Exports
-thermal load, duty, and RPM metrics to Netdata via statsd.
+Fan control daemon for TrueNAS SCALE systems on Supermicro X11 boards. Takes
+over fan control from the BMC so you can tune noise vs. cooling to your
+environment. Reads temperatures from IPMI, SMART, NVMe, and lm-sensors, then
+sets fan duty cycles via IPMI raw commands. Metrics go to Netdata via statsd.
 
 ## Features
 
@@ -13,8 +13,13 @@ thermal load, duty, and RPM metrics to Netdata via statsd.
   down and recording RPMs. Can be recalibrated as fans age or collect dust.
 - **Failsafe** — fans go to 100% on crash, total sensor class failure, or
   stalled fan. The watchdog parent restarts the daemon automatically.
-- **Netdata metrics** — per-sensor thermal load, per-zone duty, per-fan
-  target RPM, and daemon restart count via statsd.
+- **Config validation** — startup, reload, and the `check` command validate
+  config syntax, values, and hardware match before touching any fans.
+- **Syslog logging** — the daemon logs to syslog; `truefan logs` wraps
+  journalctl for easy access.
+- **Netdata metrics** — per-sensor temperature and thermal load, per-zone
+  duty, per-fan target RPM, daemon uptime, and restart count via statsd.
+  Optional alert configs included.
 
 ## Requirements
 
@@ -43,20 +48,39 @@ Put the venv on a pool — the boot drive is wiped on OS updates.
 
 ```bash
 # Detect sensors, calibrate fans, write config
+# (ramps fans up and down for a few minutes)
 sudo truefan init
 
-# Start the daemon
-sudo truefan run
+# Start the daemon (daemonizes and returns immediately)
+sudo truefan start
+
+# Check if it's running
+truefan status
 
 # Show detected sensors and current readings
 truefan sensors
 
-# Re-calibrate after cleaning or replacing fans
-sudo truefan recalibrate
+# Follow daemon logs
+truefan logs -f
 
 # Reload config without restarting
 sudo truefan reload
+
+# Re-calibrate after cleaning or replacing fans
+sudo truefan recalibrate
+
+# Stop the daemon
+sudo truefan stop
 ```
+
+To get Netdata dashboards and alerts, install the bundled configs:
+
+```bash
+sudo ./netdata/install.sh standalone
+```
+
+In a streaming setup, run with `child` on the daemon box and `parent` on the
+central Netdata instance. See `./netdata/install.sh --help` for details.
 
 ## Configuration
 
@@ -95,16 +119,17 @@ Use `--config PATH` with any command to specify an alternate config location.
 ## Running on boot
 
 TrueNAS SCALE's **Init/Shutdown Scripts** (under **System > Advanced**) run
-commands at boot and shutdown. Use `tmux` to run the daemon in a detachable
-session you can attach to later for debugging.
+commands at boot and shutdown.
 
 Add a script (Type: Command, When: Post Init):
 
 ```
-tmux new-session -d -s truefan '/mnt/pool1/venvs/truefan/bin/truefan run 2>&1 | tee /var/log/truefan.log'
+/mnt/pool1/venvs/truefan/bin/truefan start
 ```
 
-To check on the daemon: `tmux attach -t truefan`. Detach with `Ctrl-b d`.
+No tmux or nohup needed — `start` forks into the background on its own.
+Use `truefan logs -f` to follow output and `truefan status` to check if
+it's running.
 
 ## How it works
 
