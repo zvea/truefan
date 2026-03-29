@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1
+
+- **State dump via SIGUSR1.** Send `kill -USR1` to the daemon to log current sensor readings, thermal loads, and zone duties to syslog. Useful for debugging why fans are at a given speed without restarting.
+- **Ghost sensor fix.** IPMI sensors with empty names are now skipped. Previously they appeared as `ipmi_` in Netdata dashboards.
+
 ## 1.2.0
 
 - **Config format changed.** `[curves.<class>]` sections are now `[thermal.class.<class>]` and `[curves.sensor.<name>]` overrides are now `[thermal.sensor.<name>]`. The fields `temp_low`/`temp_high` are renamed to `no_cooling_temp`/`max_cooling_temp`. The `duty_low` and `duty_high` fields are removed. You must update your `truefan.toml` to match, or delete it and re-run `truefan init` — the daemon will refuse to start with the old format.
