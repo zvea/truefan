@@ -140,6 +140,10 @@ the nearest calibrated fan setpoint. A spindown window prevents rapid cycling.
 If a fan stalls, the zone goes to 100% and the lowest setpoint is removed
 so the minimum duty rises going forward.
 
+Send SIGUSR1 to dump current sensor readings, thermal loads, and zone
+duties to syslog (`kill -USR1 $(cat /var/run/truefan.pid)`; view with
+`truefan logs`).
+
 ## License
 
 MIT

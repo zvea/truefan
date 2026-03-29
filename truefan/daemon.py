@@ -37,13 +37,17 @@ class _Reload(Exception):
     """Raised to trigger config reload."""
 
 
+class _DumpState(Exception):
+    """Raised to log current daemon state."""
+
+
 def _read_all_sensors(backends: list[SensorBackend]) -> list[SensorReading]:
     """Read from all backends, skipping individual failures."""
     readings: list[SensorReading] = []
     for backend in backends:
         try:
             readings.extend(backend.scan())
-        except (_Shutdown, _Reload):
+        except (_Shutdown, _Reload, _DumpState):
             raise
         except Exception as e:
             _log.warning("Sensor backend %s failed: %s", type(backend).__name__, e)
@@ -125,8 +129,8 @@ def run(
     """Start the fan control loop.
 
     Loads config, enables manual fan control, enters the poll loop,
-    handles SIGHUP for config reload, and sets fans to full speed on exit.
-    Does not return under normal operation.
+    and sets fans to full speed on exit. Handles SIGHUP (config reload),
+    SIGUSR1 (state dump to syslog). Does not return under normal operation.
     """
     config = load_config(config_path)
 
@@ -140,8 +144,12 @@ def run(
     def _handle_sighup(signum: int, frame: object) -> None:
         raise _Reload()
 
+    def _handle_sigusr1(signum: int, frame: object) -> None:
+        raise _DumpState()
+
     signal.signal(signal.SIGTERM, _handle_sigterm)
     signal.signal(signal.SIGHUP, _handle_sighup)
+    signal.signal(signal.SIGUSR1, _handle_sigusr1)
 
     # Take over fan control.
     _log.info("Resetting BMC thresholds")
@@ -156,6 +164,10 @@ def run(
     duty_history: dict[str, deque[tuple[float, int]]] = {}
     now = time.monotonic
     start_time = now()
+
+    # Last poll state, used by SIGUSR1 state dump.
+    last_readings: list[SensorReading] = []
+    last_zone_duties: dict[str, ZoneDuty] = {}
 
     try:
         while True:
@@ -226,8 +238,33 @@ def run(
                 # Check for stalls.
                 config = _detect_stalls(rpms, config, config_path, conn)
 
+                last_readings = readings
+                last_zone_duties = zone_duties
+
                 send_uptime(int(now() - start_time))
                 sleep(config.poll_interval_seconds)
+
+            except _DumpState:
+                _log.info("State dump — SIGUSR1 received")
+                _log.info(
+                    "Config: poll_interval=%ds, spindown_window=%ds",
+                    config.poll_interval_seconds, config.spindown_window_seconds,
+                )
+                for reading in last_readings:
+                    curve = config.curves.get(reading.sensor_class)
+                    if curve is None:
+                        continue
+                    override = config.sensor_overrides.get(reading.name)
+                    load = compute_thermal_load(reading, curve, override)
+                    _log.info(
+                        "Sensor %s (%s): %.1f°C, %.0f%% load",
+                        reading.name, reading.sensor_class, reading.temperature, load,
+                    )
+                for zone, zd in last_zone_duties.items():
+                    _log.info(
+                        "Zone %s: %d%% duty (driven by %s at %.1f°C, %.0f%% demand)",
+                        zone, zd.duty, zd.sensor_name, zd.temperature, zd.raw_duty,
+                    )
 
             except _Reload:
                 _log.info("SIGHUP received, reloading config")

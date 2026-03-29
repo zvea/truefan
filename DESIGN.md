@@ -29,6 +29,12 @@ After daemonization, a **watchdog parent** spawns the daemon as a child. If the 
 
 A PID file (`/var/run/truefan.pid`) with OS-level `flock` prevents multiple instances. The PID file holds the watchdog's PID (the outermost long-lived process after daemonization). `truefan start` acquires the lock after daemonizing; the lock is released automatically on process exit (including `kill -9`). `truefan stop` reads the PID file, verifies the lock is held, sends SIGTERM, and waits for the process to exit. `truefan init` and `truefan recalibrate` acquire the lock for the duration of their work, preventing conflicts with a running daemon or each other. `truefan sensors` is read-only and skips the check.
 
+Signals handled by the daemon child process:
+
+- **SIGTERM** — clean shutdown: set fans to full speed and exit.
+- **SIGHUP** — reload config from disk.
+- **SIGUSR1** — dump current state to syslog immediately (interrupts sleep). Logs poll interval, spindown window, then one line per sensor (name, class, temperature, thermal load %) and one line per zone (duty %, driving sensor, demanded duty %). Visible via `truefan logs`.
+
 ### Main loop
 
 Runs every `poll_interval_seconds` (default 15):

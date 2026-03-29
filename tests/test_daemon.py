@@ -414,6 +414,105 @@ class TestDaemonRun:
             assert "peripheral" in shutdown_calls
 
     @patch("truefan.daemon.available_backends")
+    def test_sigusr1_dumps_state(self, mock_avail, tmp_path: Path, caplog) -> None:
+        """SIGUSR1 logs sensor and zone state to syslog."""
+        from truefan.sensors import SensorReading
+        cfg = tmp_path / "truefan.toml"
+        _write_config(cfg)
+        sim = _make_sim()
+
+        readings = [SensorReading(
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=55.0,
+        )]
+        mock_avail.side_effect = _mock_backends_factory(readings)
+
+        cycle_count = 0
+
+        def _send_sigusr1_then_stop(seconds: float) -> None:
+            nonlocal cycle_count
+            cycle_count += 1
+            if cycle_count == 1:
+                handler = signal.getsignal(signal.SIGUSR1)
+                handler(signal.SIGUSR1, None)
+            elif cycle_count >= 2:
+                raise KeyboardInterrupt
+
+        import logging
+        with caplog.at_level(logging.INFO, logger="truefan.daemon"):
+            run(cfg, conn=sim, sleep=_send_sigusr1_then_stop)
+
+        # Should have logged sensor lines and zone lines.
+        dump_lines = [r.message for r in caplog.records if "State dump" in r.message or "ipmi_CPU_Temp" in r.message or "zone" in r.message.lower()]
+        assert any("ipmi_CPU_Temp" in line for line in dump_lines)
+        assert any("cpu" in line.lower() and "%" in line for line in dump_lines)
+
+    @patch("truefan.daemon.available_backends")
+    def test_sigusr1_continues_polling(self, mock_avail, tmp_path: Path) -> None:
+        """After SIGUSR1 the daemon continues polling normally."""
+        from truefan.sensors import SensorReading
+        cfg = tmp_path / "truefan.toml"
+        _write_config(cfg)
+        sim = _make_sim()
+
+        readings = [SensorReading(
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=55.0,
+        )]
+        mock_avail.side_effect = _mock_backends_factory(readings)
+
+        cycle_count = 0
+
+        def _send_sigusr1_then_continue(seconds: float) -> None:
+            nonlocal cycle_count
+            cycle_count += 1
+            if cycle_count == 1:
+                handler = signal.getsignal(signal.SIGUSR1)
+                handler(signal.SIGUSR1, None)
+            elif cycle_count >= 3:
+                raise KeyboardInterrupt
+
+        run(cfg, conn=sim, sleep=_send_sigusr1_then_continue)
+        assert cycle_count == 3
+
+    @patch("truefan.daemon.available_backends")
+    def test_sigusr1_reflects_current_temps(self, mock_avail, tmp_path: Path, caplog) -> None:
+        """State dump reflects the most recent sensor readings."""
+        from truefan.sensors import SensorReading
+        cfg = tmp_path / "truefan.toml"
+        _write_config(cfg)
+        sim = _make_sim()
+
+        cycle_count = 0
+
+        class _VaryingBackend:
+            """Backend that returns different temps each scan."""
+            def scan(self):  # noqa: ANN201
+                temp = 40.0 if cycle_count < 1 else 70.0
+                return [SensorReading(
+                    name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU,
+                    temperature=temp,
+                )]
+
+        mock_avail.return_value = [_VaryingBackend()]
+
+        def _send_sigusr1_after_second_cycle(seconds: float) -> None:
+            nonlocal cycle_count
+            cycle_count += 1
+            if cycle_count == 2:
+                handler = signal.getsignal(signal.SIGUSR1)
+                handler(signal.SIGUSR1, None)
+            elif cycle_count >= 3:
+                raise KeyboardInterrupt
+
+        import logging
+        with caplog.at_level(logging.INFO, logger="truefan.daemon"):
+            run(cfg, conn=sim, sleep=_send_sigusr1_after_second_cycle)
+
+        # The dump should show 70.0°C (the second cycle's temp), not 40.0°C.
+        sensor_lines = [r.message for r in caplog.records if "State dump" in r.message or "ipmi_CPU_Temp" in r.message]
+        dump_sensor_lines = [l for l in sensor_lines if "70.0" in l]
+        assert len(dump_sensor_lines) >= 1
+
+    @patch("truefan.daemon.available_backends")
     def test_spindown_window_prevents_immediate_decrease(self, mock_avail, tmp_path: Path) -> None:
         """Fan duty doesn't drop immediately when demand decreases."""
         from truefan.sensors import SensorReading
