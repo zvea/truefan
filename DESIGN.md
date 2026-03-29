@@ -202,7 +202,7 @@ The daemon pushes metrics to Netdata's statsd listener over UDP.
 
 The daemon logs to syslog (`LOG_DAEMON` facility, identifier `truefan`) — fan speed changes, sensor errors, stall events. Visible via `journalctl -t truefan` and `/var/log/syslog`.
 
-Config files for Netdata live in `netdata/child/` (statsd app config) and `netdata/parent/` (alert definitions). Manage with `sudo ./netdata/setup.sh [--container NAME] child|parent|standalone|none`. The target is the desired end state: `child` installs the statsd app config and removes alerts, `parent` installs alerts and removes the statsd config, `standalone` installs both, and `none` removes both. In a streaming setup, `child` goes on the box running the daemon and `parent` on the central Netdata instance. For a single-box setup, use `standalone`. The container is auto-detected if exactly one running container has "netdata" in its name.
+Config files for Netdata live in `netdata/statsd.d/` (statsd app config) and `netdata/health.d/` (alert definitions), mirroring the Netdata directory layout. `sudo ./netdata/setup.sh install` copies both into the container; `sudo ./netdata/setup.sh uninstall` removes them. Use `--container NAME` to target a specific container, otherwise the script auto-detects a single running container with "netdata" in its name.
 
 ### Failsafe
 
