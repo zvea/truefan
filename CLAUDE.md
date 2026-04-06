@@ -74,7 +74,7 @@ Always ask before introducing any new dependency.
 
 ## Python Style Guide
 
-- All imports at module level only — except in `main.py` (lazy subcommand loading) and `sensors/__init__.py` (circular import avoidance). Comment the reason.
+- All imports at module level only. Lazy imports are allowed only in `main.py` (subcommand loading) and `sensors/__init__.py` (circular import avoidance) — comment the reason.
 - Every module and function must have a docstring: a brief description, plus any non-obvious behaviour or constraints worth noting. Omit obvious parameter/return documentation.
 - All functions and methods must have type annotations on parameters and return values.
 - Annotate module-level constants with `Final` (bare — only parameterise when the inferred type would be wrong) and use immutable container types (`frozenset`, `tuple`, `MappingProxyType`) rather than mutable ones.
