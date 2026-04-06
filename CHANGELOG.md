@@ -1,8 +1,11 @@
 # Changelog
 
-## 1.5.1
+## 1.6.0
 
+- **Fan stall alerts.** Netdata now alerts when a fan stalls and when the daemon is crash-looping. Run `truefan netdata install` to deploy the new alerts and charts.
+- **Stall recovery no longer over-corrects.** Previously, a single stall could remove multiple setpoints — once per BMC event (Lower Critical + Lower Non-recoverable), and again on every daemon restart from historical events. Now only one setpoint is removed per fan per stall, and old events are ignored on startup.
 - **BMC override recovery uses the IPMI event log.** The daemon now reads the BMC System Event Log each poll cycle to identify exactly which fan stalled. Previously it used an RPM heuristic that incorrectly removed setpoints from all fans when the BMC kicked every fan to full speed in response to a single stall.
+- **Config path logged on startup.**
 
 ## 1.5.0
 
