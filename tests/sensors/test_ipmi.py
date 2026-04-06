@@ -36,6 +36,10 @@ class MockBmcConnection(BmcConnection):
             TemperatureSensorData(name="DIMMB2 Temp", temperature=34.0, upper_non_critical=79.0, upper_critical=90.0),
         ]
 
+    def read_sel(self, last_n: int = 20) -> list:
+        """No-op for tests."""
+        return []
+
 
 # ---------------------------------------------------------------------------
 # #### IpmiSensorBackend.scan

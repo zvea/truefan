@@ -28,6 +28,10 @@ class StubBmc(BmcConnection):
     def list_temperature_sensors(self) -> list[TemperatureSensorData]:
         return []
 
+    def read_sel(self, last_n: int = 20) -> list:
+        """No-op for tests."""
+        return []
+
 
 def _which(tools: set[str]):  # noqa: ANN202
     """Return a shutil.which mock that finds only the given tools."""

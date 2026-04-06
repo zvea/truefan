@@ -55,6 +55,10 @@ class MockBmcConnection(BmcConnection):
         """Not used by fans.py tests."""
         return []
 
+    def read_sel(self, last_n: int = 20) -> list:
+        """No-op for tests."""
+        return []
+
 
 # ---------------------------------------------------------------------------
 # #### fan_zone

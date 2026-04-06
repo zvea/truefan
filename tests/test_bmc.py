@@ -6,7 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from truefan.bmc import BmcError, IpmitoolConnection, check_ipmi_access, ipmi_device_present
+from truefan.bmc import (
+    BmcError,
+    IpmitoolConnection,
+    SelEntry,
+    check_ipmi_access,
+    ipmi_device_present,
+    parse_fan_sel_events,
+)
 
 
 _FAN_CSV = (
@@ -347,3 +354,115 @@ class TestRunRetry:
         warning_count = sum("failed" in r.message for r in caplog.records
                            if r.levelno == logging.WARNING)
         assert warning_count == 2
+
+
+# ---------------------------------------------------------------------------
+# #### parse_fan_sel_events
+# ---------------------------------------------------------------------------
+
+_SEL_ELIST_OUTPUT = (
+    "  8d | 04/06/26 | 04:34:55 CEST | Fan CPU_FAN1 | Lower Critical going low  | Asserted | Reading 0 < Threshold 100 RPM\n"
+    "  8e | 04/06/26 | 04:34:55 CEST | Fan CPU_FAN1 | Lower Non-recoverable going low  | Asserted | Reading 0 < Threshold 100 RPM\n"
+    "  8f | 04/06/26 | 04:34:58 CEST | Fan CPU_FAN1 | Lower Non-recoverable going low  | Deasserted | Reading 1200 > Threshold 100 RPM\n"
+    "  90 | 04/06/26 | 04:34:58 CEST | Fan CPU_FAN1 | Lower Critical going low  | Deasserted | Reading 1200 > Threshold 100 RPM\n"
+    "  91 | 04/06/26 | 04:55:50 CEST | Fan SYS_FAN1 | Lower Critical going low  | Asserted | Reading 0 < Threshold 100 RPM\n"
+)
+
+
+def _make_sel_entries(text: str) -> list[SelEntry]:
+    """Parse raw SEL elist output into SelEntry objects."""
+    entries = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split("|", 1)
+        entry_id = int(parts[0].strip(), 16)
+        entries.append(SelEntry(entry_id=entry_id, raw_text=line))
+    return entries
+
+
+class TestParseFanSelEvents:
+    """Tests for parse_fan_sel_events."""
+
+    def test_extracts_fan_assertions(self) -> None:
+        """Extracts fan assertion events with correct names."""
+        entries = _make_sel_entries(_SEL_ELIST_OUTPUT)
+        events = parse_fan_sel_events(entries)
+        fan_names = [e.fan_name for e in events]
+        assert "CPU_FAN1" in fan_names
+        assert "SYS_FAN1" in fan_names
+
+    def test_ignores_deassertions(self) -> None:
+        """Deassertion events are excluded."""
+        entries = _make_sel_entries(_SEL_ELIST_OUTPUT)
+        events = parse_fan_sel_events(entries)
+        # Only 3 assertions in the sample: 8d, 8e (CPU_FAN1), 91 (SYS_FAN1).
+        assert len(events) == 3
+        assert all("Deasserted" not in e.detail for e in events)
+
+    def test_ignores_non_fan_entries(self) -> None:
+        """Non-fan entries (e.g. temperature) are skipped."""
+        entries = _make_sel_entries(
+            "  a0 | 04/06/26 | 05:00:00 CEST | Temperature CPU Temp | Upper Critical going high | Asserted | Reading 95 > Threshold 90\n"
+        )
+        events = parse_fan_sel_events(entries)
+        assert events == []
+
+    def test_preserves_detail(self) -> None:
+        """The detail field contains the BMC's event message."""
+        entries = _make_sel_entries(
+            "  8d | 04/06/26 | 04:34:55 CEST | Fan CPU_FAN1 | Lower Critical going low  | Asserted | Reading 0 < Threshold 100 RPM\n"
+        )
+        events = parse_fan_sel_events(entries)
+        assert len(events) == 1
+        assert "Lower Critical" in events[0].detail
+        assert "Reading 0" in events[0].detail
+
+    def test_handles_malformed_entry(self) -> None:
+        """Malformed entries are skipped without crashing."""
+        entries = [SelEntry(entry_id=0xff, raw_text="garbage data")]
+        events = parse_fan_sel_events(entries)
+        assert events == []
+
+    def test_entry_ids_preserved(self) -> None:
+        """Entry IDs are correctly propagated from SelEntry to FanSelEvent."""
+        entries = _make_sel_entries(
+            "  91 | 04/06/26 | 04:55:50 CEST | Fan SYS_FAN1 | Lower Critical going low  | Asserted | Reading 0 < Threshold 100 RPM\n"
+        )
+        events = parse_fan_sel_events(entries)
+        assert events[0].entry_id == 0x91
+
+
+# ---------------------------------------------------------------------------
+# #### IpmitoolConnection.read_sel
+# ---------------------------------------------------------------------------
+
+class TestReadSel:
+    """Tests for IpmitoolConnection.read_sel."""
+
+    @patch("truefan.bmc.subprocess.run")
+    def test_calls_correct_command(self, mock_run) -> None:  # noqa: ANN001
+        """Calls ipmitool sel elist last N."""
+        mock_run.return_value = _make_result("")
+        conn = IpmitoolConnection()
+        conn.read_sel(last_n=10)
+        args = mock_run.call_args[0][0]
+        assert args == ["/usr/bin/ipmitool", "sel", "elist", "last", "10"]
+
+    @patch("truefan.bmc.subprocess.run")
+    def test_parses_entry_ids(self, mock_run) -> None:  # noqa: ANN001
+        """Parses hex entry IDs from SEL output."""
+        mock_run.return_value = _make_result(_SEL_ELIST_OUTPUT)
+        conn = IpmitoolConnection()
+        entries = conn.read_sel()
+        ids = [e.entry_id for e in entries]
+        assert 0x8d in ids
+        assert 0x91 in ids
+
+    @patch("truefan.bmc.subprocess.run")
+    def test_empty_sel(self, mock_run) -> None:  # noqa: ANN001
+        """Returns empty list for empty SEL output."""
+        mock_run.return_value = _make_result("")
+        conn = IpmitoolConnection()
+        assert conn.read_sel() == []

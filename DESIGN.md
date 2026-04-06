@@ -49,8 +49,9 @@ Runs every `poll_interval_seconds` (default 15):
 4. Snap to the nearest calibrated setpoint, considering all fans in the zone.
 5. Apply spindown window: the actual duty is the max of all duties computed in the last `spindown_window_seconds` (default 180). Spin-up is instant; spin-down waits for the window to clear.
 6. Apply via IPMI (only if changed since last cycle).
-7. Read fan RPMs. On fan problem — stall (zero RPM) or BMC override (fan running near 100% RPM while the daemon set a lower duty) — remove the lowest setpoint for that fan, re-assert the intended duty, persist to config.
-8. Push metrics to Netdata via statsd (temperature, thermal load, zone duty, actual RPM, min setpoint RPM, target RPM, uptime).
+7. Read fan RPMs. On stall (zero RPM): remove the lowest setpoint for that fan, re-assert the intended duty, persist to config.
+8. Check the IPMI System Event Log for recent fan assertions (`ipmitool sel elist last 20`). For each fan that had an assertion since the last check: remove its lowest setpoint, re-assert the intended duty, persist to config, and log the BMC's event message verbatim. Tracks the last-seen SEL entry ID to avoid reprocessing.
+9. Push metrics to Netdata via statsd (temperature, thermal load, zone duty, actual RPM, min setpoint RPM, target RPM, uptime).
 
 ### Sensor backends
 
@@ -94,7 +95,7 @@ Default class-to-zone mapping:
 
 `truefan init` steps through duty levels for each fan in 10% increments from 100% down, recording the RPM at each step. This builds a setpoint table (duty % → expected RPM) per fan. The lowest duty that kept the fan spinning becomes the minimum setpoint. `truefan recalibrate` re-runs this on an existing config (e.g. after cleaning or replacing fans). Calibration monitors IPMI temperatures throughout and aborts immediately if any sensor approaches its critical threshold.
 
-During normal operation, if a fan stalls or the BMC overrides the duty cycle, the daemon removes the fan's lowest setpoint (raising the effective minimum), re-asserts the intended duty, and saves the updated config.
+During normal operation, if a fan stalls — detected directly via zero RPM or indirectly via the IPMI event log — the daemon removes the fan's lowest setpoint (raising the effective minimum), re-asserts the intended duty, and saves the updated config.
 
 ### Configuration
 
@@ -225,7 +226,8 @@ Config files for Netdata (statsd app config and alert definitions) ship inside t
 
 - **Crash:** watchdog sets all fans to 100%, restarts the daemon.
 - **Sensor failure:** a single failed sensor is ignored (logged as a warning); the remaining sensors in its class still drive the curve. If *all* sensors in a class fail, the affected zones go to 100%.
-- **Stall or BMC override:** if a fan reads zero RPM (stall) or near its 100%-duty RPM while the daemon set a lower duty (BMC intervened), the daemon removes the fan's lowest setpoint, re-asserts the intended duty, and saves config. Both cases get the same recovery.
+- **Stall (real-time):** if a fan reads zero RPM during a poll, the daemon removes the fan's lowest setpoint, re-asserts the intended duty, and saves config.
+- **Stall (via BMC event log):** if the BMC detected a stall between polls and recovered the fan before the daemon noticed, the daemon finds the event in the IPMI SEL, identifies the affected fan, and applies the same recovery. The BMC's event message is logged verbatim.
 - **Clean shutdown:** fans set to full speed.
 
 ## CLI

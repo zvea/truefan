@@ -157,5 +157,8 @@ class TestRunCheck:
             def list_temperature_sensors(self) -> list:
                 raise AssertionError("BMC should not be contacted")
 
+            def read_sel(self, last_n: int = 20) -> list:
+                raise AssertionError("BMC should not be contacted")
+
         run_check(cfg, syntax_only=True, conn=NoBmc())
         assert "Config OK" in capsys.readouterr().out

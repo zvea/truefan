@@ -31,6 +31,23 @@ class TemperatureSensorData:
     upper_critical: float | None = None
 
 
+@dataclass(frozen=True, kw_only=True)
+class SelEntry:
+    """A single IPMI System Event Log entry."""
+
+    entry_id: int
+    raw_text: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class FanSelEvent:
+    """A fan assertion event extracted from a SEL entry."""
+
+    entry_id: int
+    fan_name: str
+    detail: str
+
+
 class BmcConnection(ABC):
     """Abstraction over IPMI transport for testability."""
 
@@ -54,6 +71,42 @@ class BmcConnection(ABC):
     @abstractmethod
     def list_temperature_sensors(self) -> list[TemperatureSensorData]:
         """List all temperature sensors with optional thresholds."""
+
+    @abstractmethod
+    def read_sel(self, last_n: int = 20) -> list[SelEntry]:
+        """Read the last N entries from the IPMI System Event Log."""
+
+
+def parse_fan_sel_events(entries: list[SelEntry]) -> list[FanSelEvent]:
+    """Extract fan assertion events from SEL entries.
+
+    Looks for entries containing "Fan" as a sensor type and "Asserted"
+    as the event direction.  Keeps parsing minimal — we match on the
+    sensor type field containing "Fan " followed by a name, and on
+    "Asserted" appearing in the entry (but not "Deasserted").
+    """
+    events: list[FanSelEvent] = []
+    for entry in entries:
+        # Format: id | date | time | Fan <NAME> | detail | Asserted | ...
+        parts = [p.strip() for p in entry.raw_text.split("|")]
+        if len(parts) < 6:
+            continue
+        sensor_field = parts[3]
+        if not sensor_field.startswith("Fan "):
+            continue
+        direction = parts[5]
+        if "Deasserted" in direction:
+            continue
+        if "Asserted" not in direction:
+            continue
+        fan_name = sensor_field[4:]  # strip "Fan " prefix
+        detail = " | ".join(parts[3:])
+        events.append(FanSelEvent(
+            entry_id=entry.entry_id,
+            fan_name=fan_name,
+            detail=detail,
+        ))
+    return events
 
 
 _IPMI_DEVICE_PATHS: Final = (
@@ -157,6 +210,25 @@ class IpmitoolConnection(BmcConnection):
                 else:
                     result.append((name, None))
         return result
+
+    def read_sel(self, last_n: int = 20) -> list[SelEntry]:
+        """Read the last N entries from the IPMI System Event Log."""
+        output = self._run(["sel", "elist", "last", str(last_n)])
+        entries: list[SelEntry] = []
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            # First field is the hex entry ID, separated by |.
+            parts = line.split("|", 1)
+            if len(parts) < 2:
+                continue
+            try:
+                entry_id = int(parts[0].strip(), 16)
+            except ValueError:
+                continue
+            entries.append(SelEntry(entry_id=entry_id, raw_text=line))
+        return entries
 
     def list_temperature_sensors(self) -> list[TemperatureSensorData]:
         """List all temperature sensors with thresholds from verbose CSV.

@@ -1,6 +1,6 @@
 """Shared mock implementations for tests."""
 
-from truefan.bmc import BmcConnection, TemperatureSensorData
+from truefan.bmc import BmcConnection, SelEntry, TemperatureSensorData
 
 
 class FanSimulator(BmcConnection):
@@ -14,13 +14,16 @@ class FanSimulator(BmcConnection):
         self,
         fans: dict[str, dict],
         temps: list[TemperatureSensorData] | None = None,
+        sel_entries: list[SelEntry] | None = None,
     ) -> None:
         """Fans is {name: {max_rpm, stall_below, bmc_reset}}.
 
         temps is an optional list of temperature sensor readings.
+        sel_entries is an optional list of SEL entries to return.
         """
         self._fans = fans
         self._temps = temps or []
+        self._sel_entries = sel_entries or []
         self._zone_duty: dict[str, int] = {}
         self._fan_zones: dict[str, str] = {}
         self.raw_commands: list[tuple[int, int, bytes]] = []
@@ -58,6 +61,10 @@ class FanSimulator(BmcConnection):
     def list_temperature_sensors(self) -> list[TemperatureSensorData]:
         """Return configured temperature sensor data."""
         return list(self._temps)
+
+    def read_sel(self, last_n: int = 20) -> list[SelEntry]:
+        """Return configured SEL entries."""
+        return list(self._sel_entries[-last_n:])
 
     def _simulate_rpm(self, fan_name: str, duty: int) -> int | None:
         """Compute simulated RPM for a fan at a given duty."""

@@ -435,25 +435,27 @@ class TestDaemonRun:
             assert "peripheral" in shutdown_calls
 
     @patch("truefan.daemon.available_backends")
-    def test_bmc_override_removes_setpoint(self, mock_avail, tmp_path: Path) -> None:
-        """BMC override detection removes the lowest setpoint and saves config."""
+    def test_sel_event_removes_setpoint(self, mock_avail, tmp_path: Path) -> None:
+        """A fan assertion in the SEL removes the fan's lowest setpoint."""
+        from truefan.bmc import SelEntry
         from truefan.sensors import SensorReading
         cfg = tmp_path / "truefan.toml"
         _write_config(cfg)
-        # stall_below=999 + bmc_reset=True: fan reports max_rpm instead of 0.
-        sim = FanSimulator(fans={
-            "CPU_FAN1": {"max_rpm": 1500, "stall_below": 999, "bmc_reset": True},
-            "SYS_FAN1": {"max_rpm": 1200},
-        })
-        sim.set_fan_zone("CPU_FAN1", "cpu")
-        sim.set_fan_zone("SYS_FAN1", "peripheral")
+        sel_entries = [
+            SelEntry(
+                entry_id=0x8d,
+                raw_text="  8d | 04/06/26 | 04:34:55 CEST | Fan CPU_FAN1 | Lower Critical going low  | Asserted | Reading 0 < Threshold 100 RPM",
+            ),
+        ]
+        sim = _make_sim()
+        sim._sel_entries = sel_entries
 
         readings = [SensorReading(
             name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
-        run(cfg, conn=sim, sleep=_StopAfter(2))
+        run(cfg, conn=sim, sleep=_StopAfter(1))
 
         reloaded = load_config(cfg)
         # CPU_FAN1 had setpoints {30, 50, 100}; lowest (30) should be removed.
@@ -462,59 +464,61 @@ class TestDaemonRun:
         assert len(reloaded.fans["SYS_FAN1"].setpoints) == 4
 
     @patch("truefan.daemon.available_backends")
-    def test_bmc_override_reasserts_duty(self, mock_avail, tmp_path: Path) -> None:
-        """After BMC override detection, the daemon re-asserts its intended duty."""
+    def test_sel_event_only_affects_named_fan(self, mock_avail, tmp_path: Path) -> None:
+        """SEL events only remove setpoints from the fan named in the event."""
+        from truefan.bmc import SelEntry
         from truefan.sensors import SensorReading
         cfg = tmp_path / "truefan.toml"
         _write_config(cfg)
-        sim = FanSimulator(fans={
-            "CPU_FAN1": {"max_rpm": 1500, "stall_below": 999, "bmc_reset": True},
-            "SYS_FAN1": {"max_rpm": 1200},
-        })
-        sim.set_fan_zone("CPU_FAN1", "cpu")
-        sim.set_fan_zone("SYS_FAN1", "peripheral")
+        # Only SYS_FAN1 had an event — CPU_FAN1 should be untouched.
+        sel_entries = [
+            SelEntry(
+                entry_id=0x91,
+                raw_text="  91 | 04/06/26 | 04:55:50 CEST | Fan SYS_FAN1 | Lower Critical going low  | Asserted | Reading 0 < Threshold 100 RPM",
+            ),
+        ]
+        sim = _make_sim()
+        sim._sel_entries = sel_entries
 
         readings = [SensorReading(
             name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
-        run(cfg, conn=sim, sleep=_StopAfter(2))
+        run(cfg, conn=sim, sleep=_StopAfter(1))
 
-        # The CPU zone duty should have been re-asserted (not left at 100%).
-        # Filter duty-set commands for the cpu zone (0x00).
-        duty_cmds = [
-            c[2][3] for c in sim.raw_commands
-            if c[0] == 0x30 and c[1] == 0x70 and len(c[2]) == 4
-            and c[2][0] == 0x66 and c[2][2] == 0x00
-        ]
-        # Should have: initial set, re-assertion after override, then 100 on exit.
-        # The re-asserted duty should not be 100.
-        non_shutdown = duty_cmds[:-1]  # exclude final shutdown
-        assert any(d < 100 for d in non_shutdown), (
-            f"Expected a re-asserted duty below 100%, got: {duty_cmds}"
-        )
+        reloaded = load_config(cfg)
+        assert len(reloaded.fans["CPU_FAN1"].setpoints) == 3
+        assert len(reloaded.fans["SYS_FAN1"].setpoints) < 4
 
     @patch("truefan.daemon.available_backends")
-    def test_no_bmc_override_at_full_duty(self, mock_avail, tmp_path: Path) -> None:
-        """No override detected when the daemon itself set 100% duty."""
+    def test_sel_event_not_reprocessed(self, mock_avail, tmp_path: Path) -> None:
+        """SEL entries are not reprocessed on subsequent poll cycles."""
+        from truefan.bmc import SelEntry
         from truefan.sensors import SensorReading
         cfg = tmp_path / "truefan.toml"
         _write_config(cfg)
+        sel_entries = [
+            SelEntry(
+                entry_id=0x8d,
+                raw_text="  8d | 04/06/26 | 04:34:55 CEST | Fan CPU_FAN1 | Lower Critical going low  | Asserted | Reading 0 < Threshold 100 RPM",
+            ),
+        ]
         sim = _make_sim()
+        sim._sel_entries = sel_entries
 
-        # Temperature high enough to demand 100% duty.
         readings = [SensorReading(
-            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=90.0,
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
-        run(cfg, conn=sim, sleep=_StopAfter(1))
+        # Run for 2 cycles — setpoint should only be removed once.
+        run(cfg, conn=sim, sleep=_StopAfter(2))
 
-        # No setpoints should be removed.
         reloaded = load_config(cfg)
-        assert len(reloaded.fans["CPU_FAN1"].setpoints) == 3
-        assert len(reloaded.fans["SYS_FAN1"].setpoints) == 4
+        # Only one setpoint removed (30), not two.
+        assert 30 not in reloaded.fans["CPU_FAN1"].setpoints
+        assert 50 in reloaded.fans["CPU_FAN1"].setpoints
 
     @patch("truefan.daemon.available_backends")
     def test_sigusr1_dumps_state(self, mock_avail, tmp_path: Path, caplog) -> None:

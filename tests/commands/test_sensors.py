@@ -33,6 +33,10 @@ class MockBmc(BmcConnection):
             TemperatureSensorData(name="System Temp", temperature=33.0),
         ]
 
+    def read_sel(self, last_n: int = 20) -> list:
+        """No-op for tests."""
+        return []
+
 
 def _mock_backends(bmc):  # noqa: ANN001, ANN202
     """Return only the IPMI backend with our mock."""

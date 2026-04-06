@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.1
+
+- **BMC override recovery uses the IPMI event log.** The daemon now reads the BMC System Event Log each poll cycle to identify exactly which fan stalled. Previously it used an RPM heuristic that incorrectly removed setpoints from all fans when the BMC kicked every fan to full speed in response to a single stall.
+
 ## 1.5.0
 
 - **BMC override recovery.** The daemon now detects when the BMC has overridden a fan to full speed. It removes the bad setpoint and reclaims control of the fan.

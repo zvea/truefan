@@ -8,9 +8,9 @@ from collections import deque
 from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
-from typing import Callable, Final
+from typing import Callable
 
-from truefan.bmc import BmcConnection, IpmitoolConnection
+from truefan.bmc import BmcConnection, IpmitoolConnection, parse_fan_sel_events
 from truefan.commands.netdata import check_netdata_config
 from truefan.calibrate import remove_lowest_setpoint
 from truefan.config import Config, FanConfig, load_config, save_config
@@ -82,11 +82,79 @@ def _check_class_failures(
     return zone_duties
 
 
-# Heuristic: if a fan's actual RPM is at or above this fraction of its
-# 100%-duty RPM while the daemon set a lower duty, the BMC has likely
-# overridden our duty cycle in response to a stall it detected between
-# our poll cycles.
-_BMC_OVERRIDE_THRESHOLD: Final = 0.9
+def _recover_fan(
+    fan_name: str,
+    fans: dict[str, FanConfig],
+    reassert_zones: set[str],
+) -> bool:
+    """Remove the lowest setpoint for a fan and mark its zone for re-assertion.
+
+    Returns True if a setpoint was removed.
+    """
+    fan_config = fans.get(fan_name)
+    if fan_config is None:
+        return False
+    new_fan_config = remove_lowest_setpoint(fan_config)
+    if new_fan_config is fan_config:
+        return False
+    _log.warning(
+        "Removed lowest setpoint for %s, new min duty %d%%",
+        fan_name, min(new_fan_config.setpoints),
+    )
+    fans[fan_name] = new_fan_config
+    reassert_zones.add(fan_config.zone)
+    return True
+
+
+def _detect_stalls(
+    rpms: list[FanRpm],
+    fans: dict[str, FanConfig],
+    reassert_zones: set[str],
+) -> None:
+    """Detect fans with zero RPM (real-time stall detection)."""
+    for fan_rpm in rpms:
+        if fan_rpm.rpm > 0:
+            continue
+        if fan_rpm.name not in fans:
+            continue
+        _log.warning("Fan %s stalled (0 RPM)", fan_rpm.name)
+        _recover_fan(fan_rpm.name, fans, reassert_zones)
+
+
+def _check_sel_events(
+    conn: BmcConnection,
+    fans: dict[str, FanConfig],
+    reassert_zones: set[str],
+    last_sel_id: int,
+    already_recovered: set[str],
+) -> int:
+    """Check IPMI SEL for fan assertions the daemon missed.
+
+    Returns the updated last-seen SEL entry ID.  Fans already handled
+    by real-time stall detection (in *already_recovered*) are skipped.
+    """
+    try:
+        entries = conn.read_sel()
+    except Exception as e:
+        _log.warning("Failed to read IPMI SEL: %s", e)
+        return last_sel_id
+
+    events = parse_fan_sel_events(entries)
+    new_last_id = last_sel_id
+
+    for event in events:
+        if event.entry_id <= last_sel_id:
+            continue
+        new_last_id = max(new_last_id, event.entry_id)
+        if event.fan_name in already_recovered:
+            continue
+        _log.warning(
+            "Fan %s stall detected via BMC event log: %s",
+            event.fan_name, event.detail,
+        )
+        _recover_fan(event.fan_name, fans, reassert_zones)
+
+    return new_last_id
 
 
 def _detect_fan_problems(
@@ -95,65 +163,35 @@ def _detect_fan_problems(
     config_path: Path,
     conn: BmcConnection,
     prev_zone_duties: dict[str, int],
-) -> Config:
-    """Detect fan stalls and BMC overrides, remove bad setpoints.
+    last_sel_id: int,
+) -> tuple[Config, int]:
+    """Detect fan problems via RPM and IPMI SEL, recover bad setpoints.
 
-    Two failure modes, same recovery:
+    Two detection methods, same recovery:
 
-    - **Stall:** RPM reads zero — the fan stopped spinning.
-    - **BMC override:** RPM is near the 100%-duty value while the daemon
-      set a lower duty.  The BMC detected a stall between our polls and
-      kicked the fan to full speed before we noticed.
+    - **Real-time:** RPM reads zero during this poll — direct stall.
+    - **IPMI SEL:** the BMC logged a fan assertion between polls that
+      the daemon missed (the BMC recovered the fan before we noticed).
 
-    In both cases: remove the fan's lowest setpoint (so the duty floor
-    rises), re-assert the intended duty for the zone, and persist the
-    updated config.
+    In both cases: remove the fan's lowest setpoint, re-assert the
+    intended duty for the zone, and persist the updated config.
+
+    Returns the (possibly updated) config and the new last-seen SEL ID.
     """
     fans = dict(config.fans)
-    changed = False
     reassert_zones: set[str] = set()
 
-    for fan_rpm in rpms:
-        fan_config = fans.get(fan_rpm.name)
-        if fan_config is None:
-            continue
+    # Real-time stall detection.
+    _detect_stalls(rpms, fans, reassert_zones)
+    already_recovered = {
+        name for name, cfg in fans.items()
+        if cfg is not config.fans.get(name)
+    }
 
-        zone = fan_config.zone
-        intended_duty = prev_zone_duties.get(zone)
-
-        # Stall: zero RPM.
-        is_stall = fan_rpm.rpm == 0
-
-        # BMC override: actual RPM near 100% while we set a lower duty.
-        is_bmc_override = False
-        if not is_stall and intended_duty is not None and intended_duty < 100:
-            full_speed_rpm = fan_config.setpoints.get(100)
-            if full_speed_rpm is not None:
-                is_bmc_override = fan_rpm.rpm >= full_speed_rpm * _BMC_OVERRIDE_THRESHOLD
-
-        if not is_stall and not is_bmc_override:
-            continue
-
-        if is_stall:
-            _log.warning("Fan %s stalled (0 RPM)", fan_rpm.name)
-        else:
-            full_speed_rpm = fan_config.setpoints[100]
-            _log.warning(
-                "BMC override detected on %s — expected duty %d%% but fan is "
-                "at %d RPM (near full speed %d RPM)",
-                fan_rpm.name, intended_duty, fan_rpm.rpm, full_speed_rpm,
-            )
-
-        new_fan_config = remove_lowest_setpoint(fan_config)
-        if new_fan_config is not fan_config:
-            _log.warning(
-                "Removed lowest setpoint for %s, new min duty %d%%",
-                fan_rpm.name, min(new_fan_config.setpoints),
-            )
-            fans[fan_rpm.name] = new_fan_config
-            changed = True
-
-        reassert_zones.add(zone)
+    # SEL-based detection (catches stalls the BMC handled between polls).
+    last_sel_id = _check_sel_events(
+        conn, fans, reassert_zones, last_sel_id, already_recovered,
+    )
 
     # Re-assert intended duty for affected zones to reclaim control.
     for zone in reassert_zones:
@@ -162,12 +200,13 @@ def _detect_fan_problems(
             set_zone_duty(conn, zone, intended_duty)
             send_zone_duty(zone, intended_duty)
 
+    changed = any(fans[name] is not config.fans.get(name) for name in fans)
     if changed:
         config = replace(config, fans=MappingProxyType(fans))
         save_config(config_path, config)
         _log.info("Config saved after fan recovery")
 
-    return config
+    return config, last_sel_id
 
 
 def run(
@@ -223,6 +262,7 @@ def run(
     duty_history: dict[str, deque[tuple[float, int]]] = {}
     now = time.monotonic
     start_time = now()
+    last_sel_id: int = 0
 
     # Last poll state, used by SIGUSR1 state dump.
     last_readings: list[SensorReading] = []
@@ -298,9 +338,10 @@ def run(
                         if target is not None:
                             send_target_rpm(fan_rpm.name, target)
 
-                # Check for stalls and BMC overrides.
-                config = _detect_fan_problems(
+                # Check for stalls (real-time) and BMC events (SEL).
+                config, last_sel_id = _detect_fan_problems(
                     rpms, config, config_path, conn, prev_zone_duties,
+                    last_sel_id,
                 )
 
                 last_readings = readings
