@@ -10,7 +10,7 @@ TrueFan is a fan control daemon for TrueNAS SCALE systems based on Supermicro X1
 - **Self-calibrate** how slow each fan can go without stalling, can be recalibrated as fans age or collect dust.
 - **Fail safe** — go to 100% on crash, total sensor class failure, or stalled fan.
 - **Keep a single config file** for user settings and daemon-learned state. Comments and formatting survive when the daemon writes back to it.
-- **Expose metrics** to Netdata over statsd — per-sensor temperature and thermal load, per-zone duty, per-fan target RPM, daemon uptime, and restart count.
+- **Expose metrics** to Netdata over statsd — per-sensor temperature and thermal load, per-zone duty, per-fan actual and target RPM, daemon uptime, and restart count.
 
 ## Non-goals
 
@@ -48,7 +48,7 @@ Runs every `poll_interval_seconds` (default 15):
 5. Apply spindown window: the actual duty is the max of all duties computed in the last `spindown_window_seconds` (default 180). Spin-up is instant; spin-down waits for the window to clear.
 6. Apply via IPMI (only if changed since last cycle).
 7. Read fan RPMs. On stall: set zone to 100%, try to restart, remove the lowest setpoint for that fan, persist to config.
-8. Push metrics to Netdata via statsd (temperature, thermal load, zone duty, target RPM, uptime).
+8. Push metrics to Netdata via statsd (temperature, thermal load, zone duty, actual RPM, target RPM, uptime).
 
 ### Sensor backends
 
@@ -202,7 +202,8 @@ The daemon pushes metrics to Netdata's statsd listener over UDP.
 
 | Metric | Type | Meaning |
 |---|---|---|
-| `truefan.fan.<name>.target_rpm` | gauge | Expected RPM from the setpoint table at the current duty. Compare against actual RPM to spot anomalies. |
+| `truefan.fan.<name>.actual_rpm` | gauge | Current RPM reading from IPMI. |
+| `truefan.fan.<name>.target_rpm` | gauge | Expected RPM from the setpoint table at the current duty. |
 | `truefan.sensor.<name>.thermal_load` | gauge | How far each sensor is between its no_cooling_temp and max_cooling_temp (0-100%). |
 | `truefan.sensor.<name>.temperature` | gauge | Current reading in °C. |
 | `truefan.zone.<name>.duty` | gauge | Current duty cycle % for each fan zone. |

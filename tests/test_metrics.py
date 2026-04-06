@@ -3,6 +3,7 @@
 import socket
 
 from truefan.metrics import (
+    send_actual_rpm,
     send_daemon_restart,
     send_target_rpm,
     send_temperature,
@@ -17,6 +18,27 @@ def _receive_one(sock: socket.socket) -> str:
     sock.settimeout(1.0)
     data, _ = sock.recvfrom(1024)
     return data.decode()
+
+
+# ---------------------------------------------------------------------------
+# #### send_actual_rpm
+# ---------------------------------------------------------------------------
+
+class TestSendActualRpm:
+    """Tests for send_actual_rpm."""
+
+    def test_sends_correct_statsd_gauge(self) -> None:
+        """Sends a correctly formatted statsd gauge line."""
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+
+            send_actual_rpm("FAN1", 620, port=port)
+            assert _receive_one(sock) == "truefan.fan.FAN1.actual_rpm:620|g"
+
+    def test_socket_error_does_not_raise(self) -> None:
+        """UDP failure is swallowed, not raised."""
+        send_actual_rpm("FAN1", 620, port=1)
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +158,10 @@ class TestSendDaemonRestart:
 class TestNoNetdata:
     """All metric functions work silently when no listener is present."""
 
+    def test_actual_rpm_no_listener(self) -> None:
+        """send_actual_rpm does not raise when nothing listens."""
+        send_actual_rpm("FAN1", 620, port=1)
+
     def test_target_rpm_no_listener(self) -> None:
         """send_target_rpm does not raise when nothing listens."""
         send_target_rpm("FAN1", 620, port=1)
@@ -158,6 +184,7 @@ class TestNoNetdata:
 
     def test_unreachable_host(self) -> None:
         """Metrics to an unreachable host do not raise."""
+        send_actual_rpm("FAN1", 620, host="192.0.2.1", port=8125)
         send_target_rpm("FAN1", 620, host="192.0.2.1", port=8125)
         send_zone_duty("cpu", 50, host="192.0.2.1", port=8125)
         send_daemon_restart(host="192.0.2.1", port=8125)

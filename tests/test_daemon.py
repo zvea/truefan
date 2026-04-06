@@ -208,6 +208,24 @@ class TestDaemonRun:
                 assert call[0][0] >= 0
 
     @patch("truefan.daemon.available_backends")
+    def test_sends_actual_rpm_metrics(self, mock_avail, tmp_path: Path) -> None:
+        """Actual RPM is pushed to statsd each cycle for every fan."""
+        from truefan.sensors import SensorReading
+        cfg = tmp_path / "truefan.toml"
+        _write_config(cfg)
+        sim = _make_sim()
+
+        readings = [SensorReading(
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=55.0,
+        )]
+        mock_avail.side_effect = _mock_backends_factory(readings)
+
+        with patch("truefan.daemon.send_actual_rpm") as mock_metric:
+            run(cfg, conn=sim, sleep=_StopAfter(1))
+            # One call per fan per cycle — sim has two fans.
+            assert mock_metric.call_count == 2
+
+    @patch("truefan.daemon.available_backends")
     def test_sends_target_rpm_metrics(self, mock_avail, tmp_path: Path) -> None:
         """Target RPM is pushed to statsd each cycle."""
         from truefan.sensors import SensorReading

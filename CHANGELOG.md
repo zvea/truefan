@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.0
+
+- **Actual RPM metric.** Per-fan actual RPM is now pushed to Netdata (`truefan.fan.<name>.actual_rpm`) alongside the existing `target_rpm`. Run `sudo ./netdata/setup.sh install` to add the new chart.
+
 ## 1.2.2
 
 - **SIGUSR1 no longer kills the watchdog.** Previously, sending SIGUSR1 to dump state would kill the watchdog (unhandled signal), leaving the daemon child running unsupervised with a stale PID file. The watchdog now forwards SIGUSR1 to the child correctly.

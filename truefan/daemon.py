@@ -23,7 +23,7 @@ from truefan.fans import (
     set_full_speed,
     set_zone_duty,
 )
-from truefan.metrics import send_target_rpm, send_temperature, send_thermal_load, send_uptime, send_zone_duty
+from truefan.metrics import send_actual_rpm, send_target_rpm, send_temperature, send_thermal_load, send_uptime, send_zone_duty
 from truefan.sensors import SensorBackend, SensorReading, available_backends
 
 _log: logging.Logger = logging.getLogger(__name__)
@@ -226,6 +226,7 @@ def run(
                 # Read fan RPMs and push metrics.
                 rpms = read_fan_rpms(conn)
                 for fan_rpm in rpms:
+                    send_actual_rpm(fan_rpm.name, fan_rpm.rpm)
                     fan_config = config.fans.get(fan_rpm.name)
                     if fan_config is None:
                         continue
