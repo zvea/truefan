@@ -255,7 +255,7 @@ def run(
     signal.signal(signal.SIGHUP, _handle_sighup)
     signal.signal(signal.SIGUSR1, _handle_sigusr1)
 
-    _log.info("truefan %s starting", version("truefan"))
+    _log.info("truefan %s starting, config %s", version("truefan"), config_path.resolve())
 
     # Check Netdata config (advisory — never blocks startup).
     netdata_warnings = check_netdata_config()
