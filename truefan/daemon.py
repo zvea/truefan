@@ -25,7 +25,7 @@ from truefan.fans import (
     set_full_speed,
     set_zone_duty,
 )
-from truefan.metrics import send_actual_rpm, send_target_rpm, send_temperature, send_thermal_load, send_uptime, send_zone_duty
+from truefan.metrics import send_actual_rpm, send_min_setpoint_rpm, send_target_rpm, send_temperature, send_thermal_load, send_uptime, send_zone_duty
 from truefan.sensors import SensorBackend, SensorReading, available_backends
 
 _log: logging.Logger = logging.getLogger(__name__)
@@ -242,6 +242,9 @@ def run(
                     fan_config = config.fans.get(fan_rpm.name)
                     if fan_config is None:
                         continue
+                    if fan_config.setpoints:
+                        min_duty = min(fan_config.setpoints)
+                        send_min_setpoint_rpm(fan_rpm.name, fan_config.setpoints[min_duty])
                     current_duty = prev_zone_duties.get(fan_config.zone)
                     if current_duty is not None:
                         target = fan_config.setpoints.get(current_duty)

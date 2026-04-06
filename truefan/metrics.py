@@ -33,6 +33,16 @@ def send_actual_rpm(
     _send(f"truefan.fan.{fan_name}.actual_rpm:{rpm}|g", host, port)
 
 
+def send_min_setpoint_rpm(
+    fan_name: str,
+    rpm: int,
+    host: str = DEFAULT_STATSD_HOST,
+    port: int = DEFAULT_STATSD_PORT,
+) -> None:
+    """Send a per-fan minimum setpoint RPM gauge."""
+    _send(f"truefan.fan.{fan_name}.min_setpoint_rpm:{rpm}|g", host, port)
+
+
 def send_target_rpm(
     fan_name: str,
     target_rpm: int,
