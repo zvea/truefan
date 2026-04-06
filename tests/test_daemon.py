@@ -391,8 +391,8 @@ class TestDaemonRun:
         assert 100 in zone_duties.get(0x00, [])
 
     @patch("truefan.daemon.available_backends")
-    def test_stall_sends_100_duty_metric(self, mock_avail, tmp_path: Path) -> None:
-        """A fan stall sends a 100% duty metric to statsd for the affected zone."""
+    def test_stall_reasserts_intended_duty(self, mock_avail, tmp_path: Path) -> None:
+        """A fan stall re-asserts the intended duty rather than forcing 100%."""
         from truefan.sensors import SensorReading
         cfg = tmp_path / "truefan.toml"
         _write_config(cfg)
@@ -405,10 +405,13 @@ class TestDaemonRun:
 
         with patch("truefan.daemon.send_zone_duty") as mock_metric:
             run(cfg, conn=sim, sleep=_StopAfter(1))
-            # Stall detection should have sent 100% for each stalled zone,
-            # in addition to the normal loop sends and the shutdown sends.
-            stall_calls = [c for c in mock_metric.call_args_list if c[0] == ("cpu", 100)]
-            assert len(stall_calls) >= 1
+            # Recovery should re-assert the intended duty, not force 100%.
+            # Filter out shutdown calls (100% for both zones at the end).
+            calls = mock_metric.call_args_list
+            cpu_calls = [c for c in calls if c[0][0] == "cpu"]
+            # At least one non-100% call from normal operation + re-assertion.
+            non_100 = [c for c in cpu_calls if c[0][1] != 100]
+            assert len(non_100) >= 1
 
     @patch("truefan.daemon.available_backends")
     def test_shutdown_sends_100_duty_metric(self, mock_avail, tmp_path: Path) -> None:

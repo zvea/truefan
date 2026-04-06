@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0
+
+- **BMC override recovery.** The daemon now detects when the BMC has overridden a fan to full speed. It removes the bad setpoint and reclaims control of the fan.
+- **Stall recovery no longer forces 100%.** Fan stalls and BMC overrides now get the same recovery: remove the bad setpoint and re-assert the intended duty. Previously, stalls forced 100% for the duration of the spindown window (3 minutes by default).
+- **Min setpoint RPM metric.** Per-fan minimum setpoint RPM is now pushed to Netdata (`truefan.fan.<name>.min_setpoint_rpm`). Tracks calibration health — a rising floor means the fan is losing low-speed range. Run `truefan netdata install` to add the new chart.
+
 ## 1.4.0
 
 - **`truefan netdata` command.** New `truefan netdata install`, `uninstall`, and `check` subcommands replace the old `netdata/setup.sh` script. Netdata config files now ship with the pip package, so `pip install truefan` is all you need — no git checkout required.

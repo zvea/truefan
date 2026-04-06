@@ -82,47 +82,6 @@ def _check_class_failures(
     return zone_duties
 
 
-def _detect_stalls(
-    rpms: list[FanRpm],
-    config: Config,
-    config_path: Path,
-    conn: BmcConnection,
-) -> Config:
-    """Check fan RPMs for stalls, handle recovery, return possibly-updated config."""
-    fans = dict(config.fans)
-    changed = False
-
-    for fan_rpm in rpms:
-        fan_config = fans.get(fan_rpm.name)
-        if fan_config is None:
-            continue
-        if fan_rpm.rpm > 0:
-            continue
-
-        # Fan stalled — kick zone to 100%.
-        zone = fan_config.zone
-        _log.warning("Fan %s stalled (0 RPM), setting zone %s to 100%%", fan_rpm.name, zone)
-        set_zone_duty(conn, zone, 100)
-        send_zone_duty(zone, 100)
-
-        # Remove lowest setpoint.
-        new_fan_config = remove_lowest_setpoint(fan_config)
-        if new_fan_config is not fan_config:
-            _log.warning(
-                "Removed lowest setpoint for %s, new min duty %d%%",
-                fan_rpm.name, min(new_fan_config.setpoints),
-            )
-            fans[fan_rpm.name] = new_fan_config
-            changed = True
-
-    if changed:
-        config = replace(config, fans=MappingProxyType(fans))
-        save_config(config_path, config)
-        _log.info("Config saved after stall recovery")
-
-    return config
-
-
 # Heuristic: if a fan's actual RPM is at or above this fraction of its
 # 100%-duty RPM while the daemon set a lower duty, the BMC has likely
 # overridden our duty cycle in response to a stall it detected between
@@ -130,51 +89,60 @@ def _detect_stalls(
 _BMC_OVERRIDE_THRESHOLD: Final = 0.9
 
 
-def _detect_bmc_overrides(
+def _detect_fan_problems(
     rpms: list[FanRpm],
     config: Config,
     config_path: Path,
     conn: BmcConnection,
     prev_zone_duties: dict[str, int],
 ) -> Config:
-    """Detect BMC fan speed overrides and recover.
+    """Detect fan stalls and BMC overrides, remove bad setpoints.
 
-    When the BMC detects a stall between our polls, it kicks the fan to
-    100%.  The fan stays at full speed on subsequent polls because the
-    BMC has overridden our duty.  We detect this by comparing actual RPM
-    against the fan's 100%-duty setpoint: if actual RPM is near 100%
-    while we set a lower duty, the BMC intervened.
+    Two failure modes, same recovery:
 
-    Recovery: remove the lowest setpoint, re-assert the intended duty,
-    and persist config — same as stall recovery, but we also reclaim
-    control of the zone.
+    - **Stall:** RPM reads zero — the fan stopped spinning.
+    - **BMC override:** RPM is near the 100%-duty value while the daemon
+      set a lower duty.  The BMC detected a stall between our polls and
+      kicked the fan to full speed before we noticed.
+
+    In both cases: remove the fan's lowest setpoint (so the duty floor
+    rises), re-assert the intended duty for the zone, and persist the
+    updated config.
     """
     fans = dict(config.fans)
     changed = False
+    reassert_zones: set[str] = set()
 
     for fan_rpm in rpms:
         fan_config = fans.get(fan_rpm.name)
         if fan_config is None:
             continue
 
-        full_speed_rpm = fan_config.setpoints.get(100)
-        if full_speed_rpm is None:
-            continue
-
         zone = fan_config.zone
         intended_duty = prev_zone_duties.get(zone)
-        if intended_duty is None or intended_duty >= 100:
+
+        # Stall: zero RPM.
+        is_stall = fan_rpm.rpm == 0
+
+        # BMC override: actual RPM near 100% while we set a lower duty.
+        is_bmc_override = False
+        if not is_stall and intended_duty is not None and intended_duty < 100:
+            full_speed_rpm = fan_config.setpoints.get(100)
+            if full_speed_rpm is not None:
+                is_bmc_override = fan_rpm.rpm >= full_speed_rpm * _BMC_OVERRIDE_THRESHOLD
+
+        if not is_stall and not is_bmc_override:
             continue
 
-        # Heuristic: actual RPM near 100% while we set a lower duty.
-        if fan_rpm.rpm < full_speed_rpm * _BMC_OVERRIDE_THRESHOLD:
-            continue
-
-        _log.warning(
-            "BMC override detected on %s — expected duty %d%% but fan is at "
-            "%d RPM (near full speed %d RPM), removing lowest setpoint",
-            fan_rpm.name, intended_duty, fan_rpm.rpm, full_speed_rpm,
-        )
+        if is_stall:
+            _log.warning("Fan %s stalled (0 RPM)", fan_rpm.name)
+        else:
+            full_speed_rpm = fan_config.setpoints[100]
+            _log.warning(
+                "BMC override detected on %s — expected duty %d%% but fan is "
+                "at %d RPM (near full speed %d RPM)",
+                fan_rpm.name, intended_duty, fan_rpm.rpm, full_speed_rpm,
+            )
 
         new_fan_config = remove_lowest_setpoint(fan_config)
         if new_fan_config is not fan_config:
@@ -185,14 +153,19 @@ def _detect_bmc_overrides(
             fans[fan_rpm.name] = new_fan_config
             changed = True
 
-        # Re-assert our intended duty to reclaim control from the BMC.
-        set_zone_duty(conn, zone, intended_duty)
-        send_zone_duty(zone, intended_duty)
+        reassert_zones.add(zone)
+
+    # Re-assert intended duty for affected zones to reclaim control.
+    for zone in reassert_zones:
+        intended_duty = prev_zone_duties.get(zone)
+        if intended_duty is not None:
+            set_zone_duty(conn, zone, intended_duty)
+            send_zone_duty(zone, intended_duty)
 
     if changed:
         config = replace(config, fans=MappingProxyType(fans))
         save_config(config_path, config)
-        _log.info("Config saved after BMC override recovery")
+        _log.info("Config saved after fan recovery")
 
     return config
 
@@ -326,8 +299,7 @@ def run(
                             send_target_rpm(fan_rpm.name, target)
 
                 # Check for stalls and BMC overrides.
-                config = _detect_stalls(rpms, config, config_path, conn)
-                config = _detect_bmc_overrides(
+                config = _detect_fan_problems(
                     rpms, config, config_path, conn, prev_zone_duties,
                 )
 
