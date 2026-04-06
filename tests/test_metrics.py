@@ -6,6 +6,7 @@ from truefan.metrics import (
     send_actual_rpm,
     send_daemon_restart,
     send_min_setpoint_rpm,
+    send_stalls,
     send_target_rpm,
     send_temperature,
     send_thermal_load,
@@ -61,6 +62,36 @@ class TestSendMinSetpointRpm:
     def test_socket_error_does_not_raise(self) -> None:
         """UDP failure is swallowed, not raised."""
         send_min_setpoint_rpm("FAN1", 320, port=1)
+
+
+# ---------------------------------------------------------------------------
+# #### send_stalls
+# ---------------------------------------------------------------------------
+
+class TestSendStalls:
+    """Tests for send_stalls."""
+
+    def test_sends_correct_statsd_gauge(self) -> None:
+        """Sends a correctly formatted stall count gauge."""
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+
+            send_stalls("FAN1", 1, port=port)
+            assert _receive_one(sock) == "truefan.fan.FAN1.stalls:1|g"
+
+    def test_sends_zero_when_no_stall(self) -> None:
+        """Sends 0 when no stall occurred this cycle."""
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+
+            send_stalls("FAN1", 0, port=port)
+            assert _receive_one(sock) == "truefan.fan.FAN1.stalls:0|g"
+
+    def test_socket_error_does_not_raise(self) -> None:
+        """UDP failure is swallowed, not raised."""
+        send_stalls("FAN1", 1, port=1)
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +223,10 @@ class TestNoNetdata:
         """send_target_rpm does not raise when nothing listens."""
         send_target_rpm("FAN1", 620, port=1)
 
+    def test_stalls_no_listener(self) -> None:
+        """send_stalls does not raise when nothing listens."""
+        send_stalls("FAN1", 1, port=1)
+
     def test_zone_duty_no_listener(self) -> None:
         """send_zone_duty does not raise when nothing listens."""
         send_zone_duty("cpu", 50, port=1)
@@ -212,6 +247,7 @@ class TestNoNetdata:
         """Metrics to an unreachable host do not raise."""
         send_actual_rpm("FAN1", 620, host="192.0.2.1", port=8125)
         send_min_setpoint_rpm("FAN1", 320, host="192.0.2.1", port=8125)
+        send_stalls("FAN1", 0, host="192.0.2.1", port=8125)
         send_target_rpm("FAN1", 620, host="192.0.2.1", port=8125)
         send_zone_duty("cpu", 50, host="192.0.2.1", port=8125)
         send_daemon_restart(host="192.0.2.1", port=8125)

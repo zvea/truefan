@@ -25,7 +25,7 @@ from truefan.fans import (
     set_full_speed,
     set_zone_duty,
 )
-from truefan.metrics import send_actual_rpm, send_min_setpoint_rpm, send_target_rpm, send_temperature, send_thermal_load, send_uptime, send_zone_duty
+from truefan.metrics import send_actual_rpm, send_min_setpoint_rpm, send_stalls, send_target_rpm, send_temperature, send_thermal_load, send_uptime, send_zone_duty
 from truefan.sensors import SensorBackend, SensorReading, available_backends
 
 _log: logging.Logger = logging.getLogger(__name__)
@@ -110,15 +110,21 @@ def _detect_stalls(
     rpms: list[FanRpm],
     fans: dict[str, FanConfig],
     reassert_zones: set[str],
-) -> None:
-    """Detect fans with zero RPM (real-time stall detection)."""
+) -> set[str]:
+    """Detect fans with zero RPM (real-time stall detection).
+
+    Returns the set of fan names that stalled.
+    """
+    stalled: set[str] = set()
     for fan_rpm in rpms:
         if fan_rpm.rpm > 0:
             continue
         if fan_rpm.name not in fans:
             continue
         _log.warning("Fan %s stalled (0 RPM)", fan_rpm.name)
-        _recover_fan(fan_rpm.name, fans, reassert_zones)
+        if _recover_fan(fan_rpm.name, fans, reassert_zones):
+            stalled.add(fan_rpm.name)
+    return stalled
 
 
 def _check_sel_events(
@@ -127,17 +133,19 @@ def _check_sel_events(
     reassert_zones: set[str],
     last_sel_id: int,
     already_recovered: set[str],
-) -> int:
+) -> tuple[int, set[str]]:
     """Check IPMI SEL for fan assertions the daemon missed.
 
-    Returns the updated last-seen SEL entry ID.  Fans already handled
-    by real-time stall detection (in *already_recovered*) are skipped.
+    Returns the updated last-seen SEL entry ID and the set of fan names
+    that stalled via SEL.  Fans already handled by real-time stall
+    detection (in *already_recovered*) are skipped.
     """
+    stalled: set[str] = set()
     try:
         entries = conn.read_sel()
     except Exception as e:
         _log.warning("Failed to read IPMI SEL: %s", e)
-        return last_sel_id
+        return last_sel_id, stalled
 
     events = parse_fan_sel_events(entries)
     new_last_id = last_sel_id
@@ -146,15 +154,16 @@ def _check_sel_events(
         if event.entry_id <= last_sel_id:
             continue
         new_last_id = max(new_last_id, event.entry_id)
-        if event.fan_name in already_recovered:
+        if event.fan_name in already_recovered or event.fan_name in stalled:
             continue
         _log.warning(
             "Fan %s stall detected via BMC event log: %s",
             event.fan_name, event.detail,
         )
-        _recover_fan(event.fan_name, fans, reassert_zones)
+        if _recover_fan(event.fan_name, fans, reassert_zones):
+            stalled.add(event.fan_name)
 
-    return new_last_id
+    return new_last_id, stalled
 
 
 def _detect_fan_problems(
@@ -164,7 +173,7 @@ def _detect_fan_problems(
     conn: BmcConnection,
     prev_zone_duties: dict[str, int],
     last_sel_id: int,
-) -> tuple[Config, int]:
+) -> tuple[Config, int, dict[str, int]]:
     """Detect fan problems via RPM and IPMI SEL, recover bad setpoints.
 
     Two detection methods, same recovery:
@@ -176,22 +185,29 @@ def _detect_fan_problems(
     In both cases: remove the fan's lowest setpoint, re-assert the
     intended duty for the zone, and persist the updated config.
 
-    Returns the (possibly updated) config and the new last-seen SEL ID.
+    Returns the (possibly updated) config, the new last-seen SEL ID,
+    and a dict mapping fan name to stall count for this cycle.
     """
     fans = dict(config.fans)
     reassert_zones: set[str] = set()
 
     # Real-time stall detection.
-    _detect_stalls(rpms, fans, reassert_zones)
+    rt_stalled = _detect_stalls(rpms, fans, reassert_zones)
     already_recovered = {
         name for name, cfg in fans.items()
         if cfg is not config.fans.get(name)
     }
 
     # SEL-based detection (catches stalls the BMC handled between polls).
-    last_sel_id = _check_sel_events(
+    last_sel_id, sel_stalled = _check_sel_events(
         conn, fans, reassert_zones, last_sel_id, already_recovered,
     )
+
+    # Build per-fan stall counts.
+    stall_counts: dict[str, int] = {}
+    for name in config.fans:
+        count = (1 if name in rt_stalled else 0) + (1 if name in sel_stalled else 0)
+        stall_counts[name] = count
 
     # Re-assert intended duty for affected zones to reclaim control.
     for zone in reassert_zones:
@@ -206,7 +222,7 @@ def _detect_fan_problems(
         save_config(config_path, config)
         _log.info("Config saved after fan recovery")
 
-    return config, last_sel_id
+    return config, last_sel_id, stall_counts
 
 
 def run(
@@ -262,7 +278,13 @@ def run(
     duty_history: dict[str, deque[tuple[float, int]]] = {}
     now = time.monotonic
     start_time = now()
-    last_sel_id: int = 0
+    # Seed last_sel_id so we only process SEL events that occur after startup.
+    # Without this, all historical events would be reprocessed on every start.
+    try:
+        existing_entries = conn.read_sel()
+        last_sel_id = max((e.entry_id for e in existing_entries), default=0)
+    except Exception:
+        last_sel_id = 0
 
     # Last poll state, used by SIGUSR1 state dump.
     last_readings: list[SensorReading] = []
@@ -339,10 +361,12 @@ def run(
                             send_target_rpm(fan_rpm.name, target)
 
                 # Check for stalls (real-time) and BMC events (SEL).
-                config, last_sel_id = _detect_fan_problems(
+                config, last_sel_id, stall_counts = _detect_fan_problems(
                     rpms, config, config_path, conn, prev_zone_duties,
                     last_sel_id,
                 )
+                for fan_name, count in stall_counts.items():
+                    send_stalls(fan_name, count)
 
                 last_readings = readings
                 last_zone_duties = zone_duties

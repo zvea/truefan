@@ -441,21 +441,32 @@ class TestDaemonRun:
         from truefan.sensors import SensorReading
         cfg = tmp_path / "truefan.toml"
         _write_config(cfg)
-        sel_entries = [
-            SelEntry(
-                entry_id=0x8d,
-                raw_text="  8d | 04/06/26 | 04:34:55 CEST | Fan CPU_FAN1 | Lower Critical going low  | Asserted | Reading 0 < Threshold 100 RPM",
-            ),
-        ]
         sim = _make_sim()
-        sim._sel_entries = sel_entries
 
         readings = [SensorReading(
             name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
-        run(cfg, conn=sim, sleep=_StopAfter(1))
+        # Inject SEL entries after cycle 1 so they appear after the startup
+        # seed (which captures last_sel_id from an empty log).  They are
+        # then picked up during cycle 2.
+        cycle = 0
+
+        def _inject_sel_and_run_two(seconds: float) -> None:
+            nonlocal cycle
+            cycle += 1
+            if cycle == 1:
+                sim._sel_entries = [
+                    SelEntry(
+                        entry_id=0x8d,
+                        raw_text="  8d | 04/06/26 | 04:34:55 CEST | Fan CPU_FAN1 | Lower Critical going low  | Asserted | Reading 0 < Threshold 100 RPM",
+                    ),
+                ]
+            else:
+                raise KeyboardInterrupt
+
+        run(cfg, conn=sim, sleep=_inject_sel_and_run_two)
 
         reloaded = load_config(cfg)
         # CPU_FAN1 had setpoints {30, 50, 100}; lowest (30) should be removed.
@@ -470,22 +481,30 @@ class TestDaemonRun:
         from truefan.sensors import SensorReading
         cfg = tmp_path / "truefan.toml"
         _write_config(cfg)
-        # Only SYS_FAN1 had an event — CPU_FAN1 should be untouched.
-        sel_entries = [
-            SelEntry(
-                entry_id=0x91,
-                raw_text="  91 | 04/06/26 | 04:55:50 CEST | Fan SYS_FAN1 | Lower Critical going low  | Asserted | Reading 0 < Threshold 100 RPM",
-            ),
-        ]
         sim = _make_sim()
-        sim._sel_entries = sel_entries
 
         readings = [SensorReading(
             name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
-        run(cfg, conn=sim, sleep=_StopAfter(1))
+        cycle = 0
+
+        def _inject_sel_and_run_two(seconds: float) -> None:
+            nonlocal cycle
+            cycle += 1
+            if cycle == 1:
+                # Only SYS_FAN1 had an event — CPU_FAN1 should be untouched.
+                sim._sel_entries = [
+                    SelEntry(
+                        entry_id=0x91,
+                        raw_text="  91 | 04/06/26 | 04:55:50 CEST | Fan SYS_FAN1 | Lower Critical going low  | Asserted | Reading 0 < Threshold 100 RPM",
+                    ),
+                ]
+            else:
+                raise KeyboardInterrupt
+
+        run(cfg, conn=sim, sleep=_inject_sel_and_run_two)
 
         reloaded = load_config(cfg)
         assert len(reloaded.fans["CPU_FAN1"].setpoints) == 3
@@ -498,25 +517,74 @@ class TestDaemonRun:
         from truefan.sensors import SensorReading
         cfg = tmp_path / "truefan.toml"
         _write_config(cfg)
-        sel_entries = [
-            SelEntry(
-                entry_id=0x8d,
-                raw_text="  8d | 04/06/26 | 04:34:55 CEST | Fan CPU_FAN1 | Lower Critical going low  | Asserted | Reading 0 < Threshold 100 RPM",
-            ),
-        ]
         sim = _make_sim()
-        sim._sel_entries = sel_entries
 
         readings = [SensorReading(
             name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
         )]
         mock_avail.side_effect = _mock_backends_factory(readings)
 
-        # Run for 2 cycles — setpoint should only be removed once.
-        run(cfg, conn=sim, sleep=_StopAfter(2))
+        cycle = 0
+
+        def _inject_sel_and_run_three(seconds: float) -> None:
+            nonlocal cycle
+            cycle += 1
+            if cycle == 1:
+                sim._sel_entries = [
+                    SelEntry(
+                        entry_id=0x8d,
+                        raw_text="  8d | 04/06/26 | 04:34:55 CEST | Fan CPU_FAN1 | Lower Critical going low  | Asserted | Reading 0 < Threshold 100 RPM",
+                    ),
+                ]
+            elif cycle >= 3:
+                raise KeyboardInterrupt
+
+        # Run for 3 cycles: seed (empty), inject after 1, process in 2, verify in 3.
+        run(cfg, conn=sim, sleep=_inject_sel_and_run_three)
 
         reloaded = load_config(cfg)
         # Only one setpoint removed (30), not two.
+        assert 30 not in reloaded.fans["CPU_FAN1"].setpoints
+        assert 50 in reloaded.fans["CPU_FAN1"].setpoints
+
+    @patch("truefan.daemon.available_backends")
+    def test_sel_dedupes_multiple_events_per_fan(self, mock_avail, tmp_path: Path) -> None:
+        """Multiple SEL events for the same fan in one cycle remove only one setpoint."""
+        from truefan.bmc import SelEntry
+        from truefan.sensors import SensorReading
+        cfg = tmp_path / "truefan.toml"
+        _write_config(cfg)
+        sim = _make_sim()
+
+        readings = [SensorReading(
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+        )]
+        mock_avail.side_effect = _mock_backends_factory(readings)
+
+        cycle = 0
+
+        def _inject_sel_and_run_two(seconds: float) -> None:
+            nonlocal cycle
+            cycle += 1
+            if cycle == 1:
+                # Two events for CPU_FAN1 from a single physical stall.
+                sim._sel_entries = [
+                    SelEntry(
+                        entry_id=0x8d,
+                        raw_text="  8d | 04/06/26 | 04:34:55 CEST | Fan CPU_FAN1 | Lower Critical going low  | Asserted | Reading 0 < Threshold 100 RPM",
+                    ),
+                    SelEntry(
+                        entry_id=0x8e,
+                        raw_text="  8e | 04/06/26 | 04:34:55 CEST | Fan CPU_FAN1 | Lower Non-recoverable going low  | Asserted | Reading 0 < Threshold 100 RPM",
+                    ),
+                ]
+            else:
+                raise KeyboardInterrupt
+
+        run(cfg, conn=sim, sleep=_inject_sel_and_run_two)
+
+        reloaded = load_config(cfg)
+        # CPU_FAN1 had setpoints {30, 50, 100}; only one should be removed.
         assert 30 not in reloaded.fans["CPU_FAN1"].setpoints
         assert 50 in reloaded.fans["CPU_FAN1"].setpoints
 
@@ -618,6 +686,124 @@ class TestDaemonRun:
         sensor_lines = [r.message for r in caplog.records if "State dump" in r.message or "ipmi_CPU_Temp" in r.message]
         dump_sensor_lines = [l for l in sensor_lines if "70.0" in l]
         assert len(dump_sensor_lines) >= 1
+
+    @patch("truefan.daemon.available_backends")
+    def test_stall_sends_stall_metric(self, mock_avail, tmp_path: Path) -> None:
+        """A real-time stall pushes stall count 1 for the stalled fan and 0 for others."""
+        from truefan.sensors import SensorReading
+        cfg = tmp_path / "truefan.toml"
+        _write_config(cfg)
+        sim = _make_sim(stall_below=999)  # all fans stall
+
+        readings = [SensorReading(
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+        )]
+        mock_avail.side_effect = _mock_backends_factory(readings)
+
+        with patch("truefan.daemon.send_stalls") as mock_stalls:
+            run(cfg, conn=sim, sleep=_StopAfter(1))
+            # Both fans stalled, so both should get stall count 1.
+            calls = {c[0][0]: c[0][1] for c in mock_stalls.call_args_list}
+            assert calls["CPU_FAN1"] == 1
+            assert calls["SYS_FAN1"] == 1
+
+    @patch("truefan.daemon.available_backends")
+    def test_no_stall_sends_zero(self, mock_avail, tmp_path: Path) -> None:
+        """When no fans stall, stall count 0 is pushed for all fans."""
+        from truefan.sensors import SensorReading
+        cfg = tmp_path / "truefan.toml"
+        _write_config(cfg)
+        sim = _make_sim()  # no stalls
+
+        readings = [SensorReading(
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+        )]
+        mock_avail.side_effect = _mock_backends_factory(readings)
+
+        with patch("truefan.daemon.send_stalls") as mock_stalls:
+            run(cfg, conn=sim, sleep=_StopAfter(1))
+            calls = {c[0][0]: c[0][1] for c in mock_stalls.call_args_list}
+            assert calls["CPU_FAN1"] == 0
+            assert calls["SYS_FAN1"] == 0
+
+    @patch("truefan.daemon.available_backends")
+    def test_sel_stall_sends_stall_metric(self, mock_avail, tmp_path: Path) -> None:
+        """An SEL-detected stall pushes stall count 1 for the affected fan."""
+        from truefan.bmc import SelEntry
+        from truefan.sensors import SensorReading
+        cfg = tmp_path / "truefan.toml"
+        _write_config(cfg)
+        sim = _make_sim()
+
+        readings = [SensorReading(
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+        )]
+        mock_avail.side_effect = _mock_backends_factory(readings)
+
+        cycle = 0
+
+        def _inject_sel_and_run_two(seconds: float) -> None:
+            nonlocal cycle
+            cycle += 1
+            if cycle == 1:
+                sim._sel_entries = [
+                    SelEntry(
+                        entry_id=0x8d,
+                        raw_text="  8d | 04/06/26 | 04:34:55 CEST | Fan CPU_FAN1 | Lower Critical going low  | Asserted | Reading 0 < Threshold 100 RPM",
+                    ),
+                ]
+            else:
+                raise KeyboardInterrupt
+
+        with patch("truefan.daemon.send_stalls") as mock_stalls:
+            run(cfg, conn=sim, sleep=_inject_sel_and_run_two)
+            # Get the last call per fan (cycle 2, after SEL injection).
+            all_calls = mock_stalls.call_args_list
+            cycle2_calls = {c[0][0]: c[0][1] for c in all_calls[2:4]}
+            assert cycle2_calls["CPU_FAN1"] == 1
+            assert cycle2_calls["SYS_FAN1"] == 0
+
+    @patch("truefan.daemon.available_backends")
+    def test_stall_count_resets_each_cycle(self, mock_avail, tmp_path: Path) -> None:
+        """Stall count does not carry over from one cycle to the next."""
+        from truefan.fans import FanRpm
+        from truefan.sensors import SensorReading
+        cfg = tmp_path / "truefan.toml"
+        _write_config(cfg)
+        sim = _make_sim()
+
+        readings = [SensorReading(
+            name="ipmi_CPU_Temp", sensor_class=SensorClass.CPU, temperature=40.0,
+        )]
+        mock_avail.side_effect = _mock_backends_factory(readings)
+
+        cycle = 0
+
+        # Patch read_fan_rpms to return 0 RPM only on the first cycle.
+        original_read = __import__("truefan.fans", fromlist=["read_fan_rpms"]).read_fan_rpms
+
+        def _stall_first_cycle(conn):  # noqa: ANN001, ANN202
+            rpms = original_read(conn)
+            if cycle == 0:
+                return [FanRpm(name=r.name, rpm=0) for r in rpms]
+            return rpms
+
+        def _counting_sleep(seconds: float) -> None:
+            nonlocal cycle
+            cycle += 1
+            if cycle >= 2:
+                raise KeyboardInterrupt
+
+        with patch("truefan.daemon.read_fan_rpms", side_effect=_stall_first_cycle):
+            with patch("truefan.daemon.send_stalls") as mock_stalls:
+                run(cfg, conn=sim, sleep=_counting_sleep)
+                all_calls = mock_stalls.call_args_list
+                # Cycle 0: both fans stalled (count 1 each).
+                cycle0 = {c[0][0]: c[0][1] for c in all_calls[:2]}
+                # Cycle 1: no stalls (count 0 each).
+                cycle1 = {c[0][0]: c[0][1] for c in all_calls[2:4]}
+                assert cycle0["CPU_FAN1"] == 1
+                assert cycle1["CPU_FAN1"] == 0
 
     @patch("truefan.daemon.available_backends")
     def test_spindown_window_prevents_immediate_decrease(self, mock_avail, tmp_path: Path) -> None:

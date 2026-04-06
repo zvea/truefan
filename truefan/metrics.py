@@ -33,6 +33,16 @@ def send_actual_rpm(
     _send(f"truefan.fan.{fan_name}.actual_rpm:{rpm}|g", host, port)
 
 
+def send_stalls(
+    fan_name: str,
+    count: int,
+    host: str = DEFAULT_STATSD_HOST,
+    port: int = DEFAULT_STATSD_PORT,
+) -> None:
+    """Send a per-fan stall count gauge for this poll cycle."""
+    _send(f"truefan.fan.{fan_name}.stalls:{count}|g", host, port)
+
+
 def send_min_setpoint_rpm(
     fan_name: str,
     rpm: int,

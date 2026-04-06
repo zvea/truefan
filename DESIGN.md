@@ -50,8 +50,8 @@ Runs every `poll_interval_seconds` (default 15):
 5. Apply spindown window: the actual duty is the max of all duties computed in the last `spindown_window_seconds` (default 180). Spin-up is instant; spin-down waits for the window to clear.
 6. Apply via IPMI (only if changed since last cycle).
 7. Read fan RPMs. On stall (zero RPM): remove the lowest setpoint for that fan, re-assert the intended duty, persist to config.
-8. Check the IPMI System Event Log for recent fan assertions (`ipmitool sel elist last 20`). For each fan that had an assertion since the last check: remove its lowest setpoint, re-assert the intended duty, persist to config, and log the BMC's event message verbatim. Tracks the last-seen SEL entry ID to avoid reprocessing.
-9. Push metrics to Netdata via statsd (temperature, thermal load, zone duty, actual RPM, min setpoint RPM, target RPM, uptime).
+8. Check the IPMI System Event Log for recent fan assertions (`ipmitool sel elist last 20`). For each fan that had an assertion since the last check: remove its lowest setpoint, re-assert the intended duty, persist to config, and log the BMC's event message verbatim. Tracks the last-seen SEL entry ID to avoid reprocessing. Multiple SEL events for the same fan within one cycle (e.g. Lower Critical + Lower Non-recoverable from a single stall) are deduped — only one setpoint is removed per fan per cycle. On startup, the daemon seeds the last-seen SEL ID from the current log so historical events are not reprocessed.
+9. Push metrics to Netdata via statsd (temperature, thermal load, zone duty, actual RPM, min setpoint RPM, target RPM, stall count, uptime).
 
 ### Sensor backends
 
@@ -211,6 +211,7 @@ The daemon pushes metrics to Netdata's statsd listener over UDP.
 |---|---|---|
 | `truefan.fan.<name>.actual_rpm` | gauge | Current RPM reading from IPMI. |
 | `truefan.fan.<name>.min_setpoint_rpm` | gauge | RPM at the fan's lowest surviving setpoint. Tracks calibration health over time. |
+| `truefan.fan.<name>.stalls` | gauge | Number of stalls detected for this fan during the current poll cycle (0 or 1). Not cumulative — each data point stands alone. Incremented on both real-time (zero RPM) and SEL-detected stalls. |
 | `truefan.fan.<name>.target_rpm` | gauge | Expected RPM from the setpoint table at the current duty. |
 | `truefan.sensor.<name>.thermal_load` | gauge | How far each sensor is between its no_cooling_temp and max_cooling_temp (0-100%). |
 | `truefan.sensor.<name>.temperature` | gauge | Current reading in °C. |
@@ -221,6 +222,15 @@ The daemon pushes metrics to Netdata's statsd listener over UDP.
 The daemon logs to syslog (`LOG_DAEMON` facility, identifier `truefan`) — fan speed changes, sensor errors, stall events. Visible via `journalctl -t truefan` and `/var/log/syslog`.
 
 Config files for Netdata (statsd app config and alert definitions) ship inside the Python package under `truefan/netdata_configs/`. `truefan netdata install` copies them into a Docker-based Netdata container; `truefan netdata uninstall` removes them. See the CLI section for details.
+
+#### Alerts
+
+| Alert | On | Condition | Severity | Meaning |
+|---|---|---|---|---|
+| `truefan_fan_stall` | `truefan.stalls` | `max -60s > 0` | warning | A fan stalled and its lowest setpoint was removed. Per fan. |
+| `truefan_crash_loop` | `truefan.restarts` | `incremental_sum -1h > 1` / `> 3` | warning / critical | Multiple daemon restarts in the last hour suggest a crash loop. |
+| `truefan_recent_restart` | `truefan.uptime` | `min -10s < 900` | warning | Daemon uptime is below 15 minutes, indicating a recent restart. |
+| `truefan_not_reporting` | `truefan.uptime` | `incremental_sum -60s == 0` | critical | Daemon uptime is not increasing. The daemon may have stopped or crashed. |
 
 ### Failsafe
 
