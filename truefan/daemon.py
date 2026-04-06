@@ -8,7 +8,7 @@ from collections import deque
 from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
-from typing import Callable
+from typing import Callable, Final
 
 from truefan.bmc import BmcConnection, IpmitoolConnection
 from truefan.commands.netdata import check_netdata_config
@@ -119,6 +119,80 @@ def _detect_stalls(
         config = replace(config, fans=MappingProxyType(fans))
         save_config(config_path, config)
         _log.info("Config saved after stall recovery")
+
+    return config
+
+
+# Heuristic: if a fan's actual RPM is at or above this fraction of its
+# 100%-duty RPM while the daemon set a lower duty, the BMC has likely
+# overridden our duty cycle in response to a stall it detected between
+# our poll cycles.
+_BMC_OVERRIDE_THRESHOLD: Final = 0.9
+
+
+def _detect_bmc_overrides(
+    rpms: list[FanRpm],
+    config: Config,
+    config_path: Path,
+    conn: BmcConnection,
+    prev_zone_duties: dict[str, int],
+) -> Config:
+    """Detect BMC fan speed overrides and recover.
+
+    When the BMC detects a stall between our polls, it kicks the fan to
+    100%.  The fan stays at full speed on subsequent polls because the
+    BMC has overridden our duty.  We detect this by comparing actual RPM
+    against the fan's 100%-duty setpoint: if actual RPM is near 100%
+    while we set a lower duty, the BMC intervened.
+
+    Recovery: remove the lowest setpoint, re-assert the intended duty,
+    and persist config — same as stall recovery, but we also reclaim
+    control of the zone.
+    """
+    fans = dict(config.fans)
+    changed = False
+
+    for fan_rpm in rpms:
+        fan_config = fans.get(fan_rpm.name)
+        if fan_config is None:
+            continue
+
+        full_speed_rpm = fan_config.setpoints.get(100)
+        if full_speed_rpm is None:
+            continue
+
+        zone = fan_config.zone
+        intended_duty = prev_zone_duties.get(zone)
+        if intended_duty is None or intended_duty >= 100:
+            continue
+
+        # Heuristic: actual RPM near 100% while we set a lower duty.
+        if fan_rpm.rpm < full_speed_rpm * _BMC_OVERRIDE_THRESHOLD:
+            continue
+
+        _log.warning(
+            "BMC override detected on %s — expected duty %d%% but fan is at "
+            "%d RPM (near full speed %d RPM), removing lowest setpoint",
+            fan_rpm.name, intended_duty, fan_rpm.rpm, full_speed_rpm,
+        )
+
+        new_fan_config = remove_lowest_setpoint(fan_config)
+        if new_fan_config is not fan_config:
+            _log.warning(
+                "Removed lowest setpoint for %s, new min duty %d%%",
+                fan_rpm.name, min(new_fan_config.setpoints),
+            )
+            fans[fan_rpm.name] = new_fan_config
+            changed = True
+
+        # Re-assert our intended duty to reclaim control from the BMC.
+        set_zone_duty(conn, zone, intended_duty)
+        send_zone_duty(zone, intended_duty)
+
+    if changed:
+        config = replace(config, fans=MappingProxyType(fans))
+        save_config(config_path, config)
+        _log.info("Config saved after BMC override recovery")
 
     return config
 
@@ -251,8 +325,11 @@ def run(
                         if target is not None:
                             send_target_rpm(fan_rpm.name, target)
 
-                # Check for stalls.
+                # Check for stalls and BMC overrides.
                 config = _detect_stalls(rpms, config, config_path, conn)
+                config = _detect_bmc_overrides(
+                    rpms, config, config_path, conn, prev_zone_duties,
+                )
 
                 last_readings = readings
                 last_zone_duties = zone_duties

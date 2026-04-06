@@ -49,7 +49,7 @@ Runs every `poll_interval_seconds` (default 15):
 4. Snap to the nearest calibrated setpoint, considering all fans in the zone.
 5. Apply spindown window: the actual duty is the max of all duties computed in the last `spindown_window_seconds` (default 180). Spin-up is instant; spin-down waits for the window to clear.
 6. Apply via IPMI (only if changed since last cycle).
-7. Read fan RPMs. On stall: set zone to 100%, try to restart, remove the lowest setpoint for that fan, persist to config.
+7. Read fan RPMs. On stall (zero RPM): set zone to 100%, remove the lowest setpoint for that fan, persist to config. On BMC override (fan running near 100% RPM while the daemon set a lower duty): remove the lowest setpoint, re-assert the intended duty, persist to config.
 8. Push metrics to Netdata via statsd (temperature, thermal load, zone duty, actual RPM, min setpoint RPM, target RPM, uptime).
 
 ### Sensor backends
@@ -225,7 +225,8 @@ Config files for Netdata (statsd app config and alert definitions) ship inside t
 
 - **Crash:** watchdog sets all fans to 100%, restarts the daemon.
 - **Sensor failure:** a single failed sensor is ignored (logged as a warning); the remaining sensors in its class still drive the curve. If *all* sensors in a class fail, the affected zones go to 100%.
-- **Stall:** zone goes to 100%, recovery attempted, lowest setpoint removed and config saved.
+- **Stall:** zone goes to 100%, lowest setpoint removed and config saved.
+- **BMC override:** if the BMC detects a stall and kicks a fan to 100% before the daemon's next poll, the daemon detects the override (actual RPM near the 100% setpoint while duty is lower), removes the lowest setpoint, re-asserts the intended duty, and saves config.
 - **Clean shutdown:** fans set to full speed.
 
 ## CLI
