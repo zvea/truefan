@@ -76,11 +76,11 @@ sudo truefan stop
 To get Netdata dashboards and alerts, install the bundled configs:
 
 ```bash
-sudo ./netdata/setup.sh install
+truefan netdata install
 ```
 
-Use `sudo ./netdata/setup.sh uninstall` to remove them. See `./netdata/setup.sh --help`
-for details.
+Use `truefan netdata uninstall` to remove them. Use `truefan netdata check` to verify
+configs are up to date.
 
 ## Configuration
 

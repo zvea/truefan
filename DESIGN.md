@@ -37,6 +37,8 @@ Signals handled by the daemon child process:
 - **SIGHUP** — reload config from disk.
 - **SIGUSR1** — dump current state to syslog immediately (interrupts sleep). Logs poll interval, spindown window, then one line per sensor (name, class, temperature, thermal load %) and one line per zone (duty %, driving sensor, demanded duty %). Visible via `truefan logs`.
 
+Before entering the main loop, the daemon checks whether the Netdata configs in the container match the packaged versions and logs the result. If Docker is unavailable or no Netdata container is found, the check is skipped with an info-level message. Mismatched or missing configs produce warnings with a `truefan netdata install` hint. This is advisory — the daemon starts regardless.
+
 ### Main loop
 
 Runs every `poll_interval_seconds` (default 15):
@@ -179,6 +181,7 @@ truefan/
         sensors.py   # show all detected sensors
         reload.py    # validate config, then send SIGHUP to running daemon
         logs.py      # show daemon logs via journalctl
+        netdata.py   # install/uninstall/check Netdata configs
     watchdog.py      # parent process — spawn, monitor, failsafe
     daemon.py        # main poll loop
     config.py        # load/save TOML, config dataclasses
@@ -194,6 +197,9 @@ truefan/
     calibrate.py     # ramp-down test + stall detection/recovery
     pidfile.py       # PID file locking for single-instance enforcement
     metrics.py       # statsd UDP push to Netdata
+    netdata_configs/ # Netdata config files shipped with the package
+        statsd.d/truefan.conf
+        health.d/truefan_alerts.conf
 ```
 
 ### Observability
@@ -212,7 +218,7 @@ The daemon pushes metrics to Netdata's statsd listener over UDP.
 
 The daemon logs to syslog (`LOG_DAEMON` facility, identifier `truefan`) — fan speed changes, sensor errors, stall events. Visible via `journalctl -t truefan` and `/var/log/syslog`.
 
-Config files for Netdata live in `netdata/statsd.d/` (statsd app config) and `netdata/health.d/` (alert definitions), mirroring the Netdata directory layout. `sudo ./netdata/setup.sh install` copies both into the container; `sudo ./netdata/setup.sh uninstall` removes them. Use `--container NAME` to target a specific container, otherwise the script auto-detects a single running container with "netdata" in its name.
+Config files for Netdata (statsd app config and alert definitions) ship inside the Python package under `truefan/netdata_configs/`. `truefan netdata install` copies them into a Docker-based Netdata container; `truefan netdata uninstall` removes them. See the CLI section for details.
 
 ### Failsafe
 
@@ -232,6 +238,11 @@ Config files for Netdata live in `netdata/statsd.d/` (statsd app config) and `ne
 - **`truefan status`** — check whether the daemon is running. Prints the PID if running, or "not running" if not. Exits 0 if running, 1 if not.
 - **`truefan sensors`** — show all detected temperature and fan RPM sensors with current readings, classifications, and hardware thresholds. Useful for verifying what the daemon sees before running it.
 - **`truefan check [--syntax-only]`** — validate the config and print the result. With `--syntax-only`, checks only parsing without contacting hardware. Exits 0 on success, 1 on failure.
+- **`truefan netdata install [--container NAME] [--force]`** — copy the packaged statsd app config and alert definitions into the Netdata container. Skips files that are already up to date unless `--force` is given. Warns if the destination path is not on a persistent mount (checked via `docker inspect` mount info). Restarts the container after changes and waits for the statsd port to come up.
+- **`truefan netdata uninstall [--container NAME]`** — remove TrueFan's config files from the Netdata container and restart it.
+- **`truefan netdata check [--container NAME]`** — compare installed configs against the packaged versions. Reports per file: missing, outdated, or up to date. Exits 0 if everything is current, 1 otherwise.
+
+All `truefan netdata` subcommands auto-detect the container by looking for a single running container whose name contains "netdata". `--container` overrides.
 - **`truefan logs [JOURNALCTL_ARGS...]`** — show daemon logs via `journalctl -t truefan`. All arguments are forwarded verbatim to journalctl (e.g. `truefan logs -f` to follow, `truefan logs -n 50` for last 50 lines). With no extra arguments, shows all available logs.
 
 Default config path: `truefan.toml` next to the script. `--config` overrides.

@@ -61,6 +61,25 @@ def main(argv: list[str] | None = None) -> None:
                     parents=[config_parent])
     sub.add_parser("status", help="Check whether the daemon is running")
     sub.add_parser("logs", help="Show daemon logs (args forwarded to journalctl)")
+    # Netdata integration.
+    netdata_parser = sub.add_parser("netdata", help="Manage Netdata config files")
+    netdata_sub = netdata_parser.add_subparsers(dest="netdata_command")
+    netdata_container = argparse.ArgumentParser(add_help=False)
+    netdata_container.add_argument(
+        "--container", default=None, help="Netdata Docker container name",
+    )
+    netdata_install = netdata_sub.add_parser(
+        "install", help="Install configs into Netdata container",
+        parents=[netdata_container],
+    )
+    netdata_install.add_argument(
+        "--force", "-f", action="store_true", default=False,
+        help="Overwrite even if configs are already up to date",
+    )
+    netdata_sub.add_parser("uninstall", help="Remove configs from Netdata container",
+                           parents=[netdata_container])
+    netdata_sub.add_parser("check", help="Check if installed configs are up to date",
+                           parents=[netdata_container])
     # Diagnostics.
     sub.add_parser("sensors", help="Show all detected temperature and fan sensors")
     check_parser = sub.add_parser("check", help="Validate the config file",
@@ -150,6 +169,18 @@ def _dispatch(args: argparse.Namespace) -> None:
     elif args.command == "check":
         from truefan.commands.check import run_check
         run_check(args.config, syntax_only=args.syntax_only)
+    elif args.command == "netdata":
+        from truefan.commands.netdata import run_check as run_netdata_check
+        from truefan.commands.netdata import run_install, run_uninstall
+        if args.netdata_command == "install":
+            run_install(args.container, force=args.force)
+        elif args.netdata_command == "uninstall":
+            run_uninstall(args.container)
+        elif args.netdata_command == "check":
+            run_netdata_check(args.container)
+        else:
+            print("Usage: truefan netdata {install|uninstall|check}", file=sys.stderr)
+            sys.exit(1)
 
 
 if __name__ == "__main__":

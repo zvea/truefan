@@ -11,6 +11,7 @@ from types import MappingProxyType
 from typing import Callable
 
 from truefan.bmc import BmcConnection, IpmitoolConnection
+from truefan.commands.netdata import check_netdata_config
 from truefan.calibrate import remove_lowest_setpoint
 from truefan.config import Config, FanConfig, load_config, save_config
 from truefan.control import ZoneDuty, compute_thermal_load, compute_zone_duties
@@ -153,6 +154,14 @@ def run(
     signal.signal(signal.SIGUSR1, _handle_sigusr1)
 
     _log.info("truefan %s starting", version("truefan"))
+
+    # Check Netdata config (advisory — never blocks startup).
+    netdata_warnings = check_netdata_config()
+    if netdata_warnings:
+        for warning in netdata_warnings:
+            _log.warning("%s", warning)
+    else:
+        _log.info("Netdata config check passed")
 
     # Take over fan control.
     _log.info("Resetting BMC thresholds")

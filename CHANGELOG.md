@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0
+
+- **`truefan netdata` command.** New `truefan netdata install`, `uninstall`, and `check` subcommands replace the old `netdata/setup.sh` script. Netdata config files now ship with the pip package, so `pip install truefan` is all you need — no git checkout required.
+- **Startup config check.** The daemon checks on startup whether Netdata configs in the container are up to date and logs warnings if they are missing or stale.
+- **Version logged on startup.** The daemon now logs its version when starting.
+
 ## 1.3.0
 
 - **Actual RPM metric.** Per-fan actual RPM is now pushed to Netdata (`truefan.fan.<name>.actual_rpm`) alongside the existing `target_rpm`. Run `sudo ./netdata/setup.sh install` to add the new chart.

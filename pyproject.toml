@@ -43,6 +43,9 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["truefan*"]
 
+[tool.setuptools.package-data]
+"truefan.netdata_configs" = ["statsd.d/*.conf", "health.d/*.conf"]
+
 [tool.setuptools_scm]
 
 [tool.pytest.ini_options]
