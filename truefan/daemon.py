@@ -3,6 +3,7 @@
 import logging
 import signal
 import time
+from importlib.metadata import version
 from collections import deque
 from dataclasses import replace
 from pathlib import Path
@@ -150,6 +151,8 @@ def run(
     signal.signal(signal.SIGTERM, _handle_sigterm)
     signal.signal(signal.SIGHUP, _handle_sighup)
     signal.signal(signal.SIGUSR1, _handle_sigusr1)
+
+    _log.info("truefan %s starting", version("truefan"))
 
     # Take over fan control.
     _log.info("Resetting BMC thresholds")
